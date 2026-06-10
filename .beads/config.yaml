@@ -1,0 +1,8 @@
+issue_prefixes: [bf]
+default_priority: 2
+default_type: task
+claim_ttl_minutes: 30
+secret_protection:
+  allowlist:
+    - "k8s/iad-ci/argo-(workflows|events)/\\S+"
+    - "([A-Za-z0-9._-]+/){2,}[A-Za-z0-9._-]+"
