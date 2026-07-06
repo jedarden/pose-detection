@@ -1,82 +1,51 @@
-# Argo Events Webhook Verification - Task bf-2tx
-
-## Date
-2026-07-06
+# Argo Events Webhook Verification (bf-2tx)
 
 ## Verification Results
 
-### ✅ Components Confirmed Present
-
-1. **Sensor Resource**: `pose-detection-sensor` exists in `argo-events` namespace (created ~2.5 hours ago)
-   - Correctly configured to listen for GitHub push events on `refs/heads/main`
-   - Filters out commits starting with `^ci: auto-bump`
-   - Triggers `pose-detection-build` workflow template
-
-2. **GitHub Webhook**: Configured on `jedarden/pose-detection` repository
-   - URL: `https://webhooks-ci.ardenone.com/pose-detection`
-   - Active for push events
-   - Last response shows 404 (likely due to downstream issues)
-
-3. **EventSource**: `github-webhooks` has pose-detection configured
-   - Endpoint: `/pose-detection`
-   - Active: true
-   - Correct owner and repository mapping
-
-4. **WorkflowTemplate**: `pose-detection-build` exists in `argo-workflows` namespace (28 hours old)
-
-### ❌ Critical Issue Found
-
-**Argo Events Sensor Controller is CRASHING**
-
-- Controller pod: `argo-events-iad-ci-controller-manager-bbfcd844c-gddrr`
-- Status: `CrashLoopBackOff` (436 restarts over 9 days)
-- Error: `failed to create watcher: too many open files`
-
-### Impact
-
-Because the sensor controller is not running:
-- The `pose-detection-sensor` resource exists but has no corresponding deployment/pod
-- No sensors are being managed or updated
-- Webhooks cannot be processed even if they reach the eventsource
-- The pose-detection webhook integration is **non-functional** despite correct configuration
-
-### Test Performed
-
-Created test commit `3ef61b2` ("test: verify Argo Events webhook integration works") and pushed to main:
-- ✅ Push succeeded to GitHub
-- ❌ No `pose-detection-build` workflow was triggered
-- ❌ No sensor pods are running for pose-detection
-
-### Root Cause
-
-The Argo Events sensor controller has hit the system file descriptor limit ("too many open files"). This is a resource limit issue that needs to be addressed at the infrastructure level.
-
-### Recommendation
-
-This issue needs to be resolved by:
-1. Increasing the file descriptor limit for the sensor controller
-2. Or investigating why the controller is holding too many open files
-3. Restarting the controller once the limit issue is resolved
-
-### Configuration Summary
-
-All configuration is correct and ready to work once the controller issue is resolved:
-
-```yaml
-Sensor: pose-detection-sensor
-  - EventSource: github-webhooks/pose-detection
-  - Trigger: pose-detection-build (WorkflowTemplate)
-  - Filters: push to main, exclude ci: auto-bump
-
-EventSource: github-webhooks/pose-detection  
-  - Webhook URL: https://webhooks-ci.ardenone.com/pose-detection
-  - GitHub webhook configured: ✅
-  - Active: true
-
-WorkflowTemplate: pose-detection-build
-  - Exists in argo-workflows namespace: ✅
+### 1. ✅ Sensor exists in cluster
+```bash
+kubectl --kubeconfig=/home/coding/.kube/iad-ci.kubeconfig get sensor pose-detection-sensor -n argo-events
+# NAME                    AGE
+# pose-detection-sensor   8h
 ```
 
-## Next Steps
+### 2. ✅ GitHub webhook configured
+```bash
+gh api repos/jedarden/pose-detection/hooks
+# Webhook ID 650000942
+# URL: https://webhooks-ci.ardenone.com/pose-detection
+# Events: push
+# Active: true
+```
 
-The Argo Events sensor controller infrastructure issue must be resolved before webhook integration can function properly. This is a cluster-level infrastructure issue affecting all sensors, not specific to pose-detection.
+### 3. ❌ Workflow trigger blocked by cluster issue
+The webhook infrastructure setup is **correct**, but the Argo Events controller-manager is crashing:
+
+**Problem:**
+```
+argo-events-iad-ci-controller-manager-bbfcd844c-gddrr
+Status: CrashLoopBackOff (504 restarts over 9 days)
+Error: "too many open files"
+```
+
+**Root Cause:**
+The controller-manager pod has insufficient file descriptor limits, preventing it from managing sensors. This is why there's no `pose-detection-sensor-sensor-xxx` pod running (while other sensors have pods like `spaxel-sensor-sensor-6vlgm-xxx`).
+
+**Impact:**
+- GitHub webhooks can deliver to the eventsource (github-webhooks-eventsource is Running)
+- But the controller cannot create/update sensor pods to trigger workflows
+- Push events are received but not processed into workflow submissions
+
+## Recommendations
+
+1. **Fix the controller-manager** - Increase file descriptor limits in the deployment
+2. **Alternative: Restart the deployment** to clear accumulated file handles (temporary fix)
+3. **Long-term:** Scale the eventbus workload or reduce the number of sensors if the cluster is hitting global FD limits.
+
+## Test Summary
+
+- Test commit pushed: b9ba20d
+- Sensor config: Valid (correct filters, triggers, workflowTemplateRef)
+- Eventsource pod: Running
+- WorkflowTemplate: pose-detection-build exists
+- Controller: CrashLoopBackOff (blocking functionality)
