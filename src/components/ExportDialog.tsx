@@ -209,13 +209,13 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
         </div>
 
         <div className="export-footer">
-          <button className="cancel-button" onClick={onCancel}>
+          <button className="cancel-button" onClick={onCancel} data-testid="cancel-button">
             Cancel
           </button>
-          <button 
+          <button
             className="export-button"
             onClick={handleExport}
-            data-testid="confirm-export"
+            data-testid="confirm-export-button"
           >
             💾 Export Data
           </button>

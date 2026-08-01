@@ -27,9 +27,14 @@ function App() {
   const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>(undefined);
   const [showOverlays, setShowOverlays] = useState(true);
   const showOverlaysRef = useRef(true);
-  
+
   // Service instances
   const poseDetectionService = useRef<PoseDetectionService | null>(null);
+
+  // Tracking refs for real metrics
+  const previousKeypointsRef = useRef<any[] | null>(null);
+  const sessionStartTimeRef = useRef<number | null>(null);
+  const poseStartTimeRef = useRef<number | null>(null);
   
   // State for pose tracking metrics
   const [poseMetrics, setPoseMetrics] = useState({
@@ -273,10 +278,34 @@ function App() {
           return sum + (diff * diff);
         }, 0) / totalKeypoints;
         const stability = Math.max(0, 1 - confidenceVariance);
-        
-        // Calculate movement intensity (mock for now - would need pose history)
-        const movementIntensity = Math.random() * 0.5 + 0.2; // Mock movement detection
-        
+
+        // Calculate movement intensity from frame-to-frame keypoint position changes
+        let movementIntensity = 0;
+        if (previousKeypointsRef.current && previousKeypointsRef.current.length === totalKeypoints) {
+          let totalMovement = 0;
+          let movementCount = 0;
+          for (let i = 0; i < pose.keypoints.length; i++) {
+            const currentKp = pose.keypoints[i];
+            const prevKp = previousKeypointsRef.current[i];
+            if (currentKp.score > 0.3 && prevKp.score > 0.3) {
+              const dx = currentKp.x - prevKp.x;
+              const dy = currentKp.y - prevKp.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              totalMovement += distance;
+              movementCount++;
+            }
+          }
+          // Normalize movement intensity: scale to 0-1 range, with typical movement in 0-100 pixel range
+          movementIntensity = movementCount > 0 ? Math.min(1, totalMovement / movementCount / 100) : 0;
+        }
+        previousKeypointsRef.current = [...pose.keypoints];
+
+        // Calculate real pose duration from actual pose detection start time
+        if (!poseStartTimeRef.current) {
+          poseStartTimeRef.current = timestamp;
+        }
+        const poseDuration = (timestamp - poseStartTimeRef.current) / 1000;
+
         setPoseMetrics({
           detectionConfidence: pose.confidence,
           keypointCount: totalKeypoints,
@@ -284,7 +313,7 @@ function App() {
           poseStability: stability,
           trackingQuality: (averageConfidence + stability) / 2,
           movementIntensity: movementIntensity,
-          poseDuration: (timestamp - (timestamp - 1000)) / 1000, // Mock duration
+          poseDuration: poseDuration,
           averageKeypointConfidence: averageConfidence
         });
         
@@ -292,16 +321,21 @@ function App() {
         ctx.strokeStyle = '#00ff00';
         ctx.fillStyle = '#ff0000';
         ctx.lineWidth = 2;
-        
+
         // Draw skeleton connections
         const connections = [
           [5, 6], [5, 7], [7, 9], [6, 8], [8, 10], // Arms
           [5, 11], [6, 12], [11, 12], // Torso
           [11, 13], [13, 15], [12, 14], [14, 16] // Legs
         ];
-        
+
+        // Mark that pose skeleton is being drawn
+        if (canvas.getAttribute('data-posing-skeleton') !== 'true') {
+          canvas.setAttribute('data-posing-skeleton', 'true');
+        }
+
         connections.forEach(([from, to]) => {
-          if (pose.keypoints[from] && pose.keypoints[to] && 
+          if (pose.keypoints[from] && pose.keypoints[to] &&
               pose.keypoints[from].score > 0.3 && pose.keypoints[to].score > 0.3) {
             ctx.beginPath();
             ctx.moveTo(pose.keypoints[from].x, pose.keypoints[from].y);
@@ -355,6 +389,8 @@ function App() {
       } else {
         // No pose detected
         setCurrentPose(null);
+        previousKeypointsRef.current = null;
+        poseStartTimeRef.current = null;
         setPoseMetrics({
           detectionConfidence: 0,
           keypointCount: 0,
@@ -404,8 +440,9 @@ function App() {
       }
       
     } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Unknown processing error';
       console.error('Frame processing error:', err);
-      setError(`Processing error: ${err.message}`);
+      setError(`Processing error: ${errorMessage}`);
     }
     
     // Continue animation loop only if still running
@@ -420,15 +457,21 @@ function App() {
       setError('Camera not initialized');
       return;
     }
-    
+
     try {
       setIsRunning(true);
       isRunningRef.current = true;
       setCanStart(false);
       setError(null);
+
+      // Initialize session tracking
+      sessionStartTimeRef.current = Date.now();
+      previousKeypointsRef.current = null;
+      poseStartTimeRef.current = null;
+
       console.log('Starting pose detection and motion tracking...');
       console.log('PoseDetectionService ready:', poseDetectionService.current?.isReady());
-      
+
       // Start the animation loop
       console.log('Starting animation frame loop...');
       animationFrameRef.current = requestAnimationFrame(processFrame);
@@ -443,18 +486,23 @@ function App() {
     setIsRunning(false);
     isRunningRef.current = false;
     setCanStart(true);
-    
+
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current);
       animationFrameRef.current = null;
     }
-    
+
     console.log('Stopping pose detection...');
   };
 
   const handleReset = () => {
     handleStop();
-    
+
+    // Reset all tracking state
+    sessionStartTimeRef.current = null;
+    previousKeypointsRef.current = null;
+    poseStartTimeRef.current = null;
+
     // Clear canvas
     if (canvasRef.current) {
       const ctx = canvasRef.current.getContext('2d');
@@ -462,7 +510,7 @@ function App() {
         ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
       }
     }
-    
+
     console.log('Resetting pose detection system...');
   };
 
@@ -485,6 +533,11 @@ function App() {
   };
 
   const handleExport = () => {
+    const sessionEndTime = Date.now();
+    const sessionDuration = sessionStartTimeRef.current
+      ? sessionEndTime - sessionStartTimeRef.current
+      : 0;
+
     const exportData = {
       timestamp: new Date().toISOString(),
       poseTrackingMetrics: {
@@ -500,7 +553,9 @@ function App() {
         ...performanceMetrics
       },
       session: {
-        duration: Date.now() - (Date.now() - 60000),
+        duration: sessionDuration,
+        startTime: sessionStartTimeRef.current ? new Date(sessionStartTimeRef.current).toISOString() : null,
+        endTime: new Date(sessionEndTime).toISOString(),
         framesProcessed: poseDetectionService.current ? poseDetectionService.current.getStats().totalPoses : 0,
         averageProcessingTime: poseDetectionService.current ? poseDetectionService.current.getStats().avgProcessingTime : 0,
         currentFPS: poseDetectionService.current ? poseDetectionService.current.getStats().currentFPS : 0,
@@ -522,22 +577,40 @@ function App() {
   };
 
   return (
-    <div className="App">
+    <div className="App" data-testid="gait-detection-app">
       <header className="App-header">
-        <h1>Human Pose Detection & Motion Tracking</h1>
+        <h1 data-testid="app-title">Human Pose Detection & Motion Tracking</h1>
         <p>Real-time computer vision for human pose estimation and movement analysis</p>
       </header>
       
       <main className="App-main">
         {error && (
-          <div className="error-message" style={{ 
-            background: '#ffebee', 
-            color: '#c62828', 
-            padding: '10px', 
-            borderRadius: '4px', 
-            marginBottom: '20px' 
+          <div className="error-message" data-testid="error-message" style={{
+            background: '#ffebee',
+            color: '#c62828',
+            padding: '10px',
+            borderRadius: '4px',
+            marginBottom: '20px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
           }}>
-            Error: {error}
+            <span>Error: {error}</span>
+            <button
+              onClick={() => setError(null)}
+              data-testid="error-dismiss-button"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#c62828',
+                cursor: 'pointer',
+                fontSize: '18px',
+                fontWeight: 'bold',
+                padding: '0 5px'
+              }}
+            >
+              ✕
+            </button>
           </div>
         )}
         
@@ -549,7 +622,7 @@ function App() {
         />
         
         {/* Overlay Toggle */}
-        <div style={{ marginBottom: '10px' }}>
+        <div style={{ marginBottom: '10px' }} data-testid="overlay-toggle-container">
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
             <input
               type="checkbox"
@@ -560,33 +633,37 @@ function App() {
                 showOverlaysRef.current = e.target.checked;
               }}
               style={{ width: '16px', height: '16px' }}
+              data-testid="show-overlays-checkbox"
             />
             <span style={{ fontWeight: 'bold' }}>Show Detection Overlays</span>
           </label>
         </div>
         
-        <div className="video-container" style={{ position: 'relative', display: 'inline-block' }}>
-          <video 
+        <div className="video-container" data-testid="video-container" style={{ position: 'relative', display: 'inline-block' }}>
+          <video
             ref={videoRef}
-            width="640" 
-            height="480" 
-            autoPlay 
-            muted 
+            width="640"
+            height="480"
+            autoPlay
+            muted
             playsInline
-            style={{ 
-              border: '2px solid #ccc', 
+            data-testid="video-element"
+            style={{
+              border: '2px solid #ccc',
               borderRadius: '8px',
               display: 'block'
             }}
           />
-          <canvas 
+          <canvas
             ref={canvasRef}
             width="640"
             height="480"
-            style={{ 
-              position: 'absolute', 
-              top: '2px', 
-              left: '2px', 
+            data-testid="skeleton-canvas"
+            data-testid="canvas-overlay"
+            style={{
+              position: 'absolute',
+              top: '2px',
+              left: '2px',
               pointerEvents: 'none',
               border: '2px solid rgba(255, 0, 0, 0.3)',
               borderRadius: '8px',
@@ -606,15 +683,15 @@ function App() {
           canStart={canStart && isInitialized}
         />
         
-        <div className="status">
+        <div className="status" data-testid="camera-status">
           Status: {isRunning ? 'Running' : isInitialized ? 'Ready' : 'Initializing...'}
         </div>
         
         {/* Pose Detection Metrics */}
-        <div className="pose-metrics" style={{ 
-          marginTop: '20px', 
-          padding: '20px', 
-          backgroundColor: '#f5f5f5', 
+        <div className="pose-metrics" data-testid="pose-metrics" style={{
+          marginTop: '20px',
+          padding: '20px',
+          backgroundColor: '#f5f5f5',
           borderRadius: '8px',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
@@ -622,14 +699,14 @@ function App() {
         }}>
           <h3 style={{ gridColumn: '1 / -1', margin: '0 0 10px 0' }}>Real-time Pose Detection Metrics</h3>
           
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+          <div className="parameter-card" data-testid="pose-confidence" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Detection Confidence</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
+            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="pose-confidence-value">
               {(poseMetrics.detectionConfidence * 100).toFixed(1)}%
             </p>
           </div>
