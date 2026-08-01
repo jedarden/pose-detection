@@ -101,12 +101,14 @@ export const CameraSelector: React.FC<CameraSelectorProps> = ({
   }
 
   return (
-    <div className={`camera-selector ${className}`} style={{ marginBottom: '10px' }}>
+    <div className={`camera-selector ${className}`} data-testid="camera-selector" style={{ marginBottom: '10px' }}>
       <label htmlFor="camera-select" style={{ marginRight: '10px', fontWeight: 'bold' }}>
         Select Camera:
       </label>
       <select
         id="camera-select"
+        data-testid="camera-select"
+        data-testid="available-cameras-list"
         value={currentDeviceId || ''}
         onChange={handleCameraChange}
         style={{

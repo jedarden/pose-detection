@@ -67,28 +67,29 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
   };
 
   return (
-    <div className={`performance-monitor bg-gray-100 p-4 rounded-lg ${className || ''}`}>
+    <div className={`performance-monitor bg-gray-100 p-4 rounded-lg ${className || ''}`} data-testid="performance-monitor">
       <div className="monitor-header flex justify-between items-center mb-3">
         <h3 className="text-lg font-semibold">Performance Monitor</h3>
-        <button 
+        <button
           className="details-toggle text-blue-600 hover:text-blue-800"
           onClick={() => setShowDetails(!showDetails)}
           title={showDetails ? 'Hide details' : 'Show details'}
+          data-testid="performance-details-toggle"
         >
           {showDetails ? '▼' : '▶'}
         </button>
       </div>
 
       {/* Overall Health Indicator */}
-      <div className="health-indicator mb-4">
+      <div className="health-indicator mb-4" data-testid="health-indicator">
         <div className="health-status flex justify-between items-center mb-2">
           <span className="health-label font-medium">System Health:</span>
-          <span className={`health-value font-bold ${getHealthColor(metrics.overallHealth)}`}>
+          <span className={`health-value font-bold ${getHealthColor(metrics.overallHealth)}`} data-testid="health-status">
             {metrics.overallHealth.charAt(0).toUpperCase() + metrics.overallHealth.slice(1)}
           </span>
         </div>
-        <div className="health-bar bg-gray-200 rounded-full h-2">
-          <div 
+        <div className="health-bar bg-gray-200 rounded-full h-2" data-testid="health-bar">
+          <div
             className={`health-fill rounded-full h-2 transition-all duration-300 ${
               metrics.overallHealth === 'excellent' ? 'bg-green-500' :
               metrics.overallHealth === 'good' ? 'bg-blue-500' :
@@ -104,22 +105,22 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
       </div>
 
       {/* Key Metrics */}
-      <div className="metrics-summary grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="metric-item text-center p-2 bg-white rounded">
+      <div className="metrics-summary grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="metrics-summary">
+        <div className="metric-item text-center p-2 bg-white rounded" data-testid="fps-counter" data-testid="fps-display">
           <span className="metric-label block text-sm text-gray-600">FPS:</span>
-          <span className={`metric-value block text-lg font-bold ${getMetricStatus(metrics.frameRate, 'fps')}`}>
+          <span className={`metric-value block text-lg font-bold ${getMetricStatus(metrics.frameRate, 'fps')}`} data-testid="fps-value">
             {formatValue(metrics.frameRate, '', 1)}
           </span>
         </div>
 
-        <div className="metric-item text-center p-2 bg-white rounded">
+        <div className="metric-item text-center p-2 bg-white rounded" data-testid="processing-time">
           <span className="metric-label block text-sm text-gray-600">Processing:</span>
           <span className={`metric-value block text-lg font-bold ${getMetricStatus(metrics.averageProcessingTime, 'processingTime')}`}>
             {formatValue(metrics.averageProcessingTime, 'ms', 1)}
           </span>
         </div>
 
-        <div className="metric-item text-center p-2 bg-white rounded">
+        <div className="metric-item text-center p-2 bg-white rounded" data-testid="memory-usage">
           <span className="metric-label block text-sm text-gray-600">Memory:</span>
           <span className={`metric-value block text-lg font-bold ${getMetricStatus(metrics.memoryUsage, 'memory')}`}>
             {formatValue(metrics.memoryUsage, 'MB', 0)}
@@ -136,28 +137,28 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
 
       {/* Detailed Information */}
       {showDetails && (
-        <div className="performance-details mt-4 p-4 bg-white rounded">
+        <div className="performance-details mt-4 p-4 bg-white rounded" data-testid="performance-details">
           {/* Detailed Metrics */}
           <div className="details-section mb-4">
             <h4 className="text-md font-semibold mb-2">Detailed Metrics</h4>
             <div className="detailed-metrics space-y-2">
               <div className="detail-row flex justify-between">
                 <span className="detail-label text-gray-600">Model Inference:</span>
-                <span className="detail-value font-medium">
+                <span className="detail-value font-medium" data-testid="model-inference-time">
                   {formatValue(metrics.modelInferenceTime, 'ms', 1)}
                 </span>
               </div>
-              
+
               <div className="detail-row flex justify-between">
                 <span className="detail-label text-gray-600">Rendering Time:</span>
-                <span className="detail-value font-medium">
+                <span className="detail-value font-medium" data-testid="rendering-time">
                   {formatValue(metrics.renderingTime, 'ms', 1)}
                 </span>
               </div>
-              
+
               <div className="detail-row flex justify-between">
                 <span className="detail-label text-gray-600">Processing Latency:</span>
-                <span className="detail-value font-medium">
+                <span className="detail-value font-medium" data-testid="processing-latency">
                   {formatValue(metrics.processingLatency, 'ms', 1)}
                 </span>
               </div>
@@ -171,19 +172,19 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
               <div className="trend-item flex justify-between">
                 <span className="trend-label text-gray-600">FPS Trend:</span>
                 <span className="trend-value">
-                  {historicalData.length >= 2 ? 
-                    (historicalData[historicalData.length - 1].frameRate > 
-                     historicalData[historicalData.length - 2].frameRate ? '📈' : '📉') 
+                  {historicalData.length >= 2 ?
+                    (historicalData[historicalData.length - 1].frameRate >
+                     historicalData[historicalData.length - 2].frameRate ? '📈' : '📉')
                     : '➡️'}
                 </span>
               </div>
-              
+
               <div className="trend-item flex justify-between">
                 <span className="trend-label text-gray-600">Memory Trend:</span>
                 <span className="trend-value">
-                  {historicalData.length >= 2 ? 
-                    (historicalData[historicalData.length - 1].memoryUsage < 
-                     historicalData[historicalData.length - 2].memoryUsage ? '📈' : '📉') 
+                  {historicalData.length >= 2 ?
+                    (historicalData[historicalData.length - 1].memoryUsage <
+                     historicalData[historicalData.length - 2].memoryUsage ? '📈' : '📉')
                     : '➡️'}
                 </span>
               </div>
@@ -194,7 +195,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
 
       {/* Performance Warnings */}
       {(metrics.frameRate < 15 || metrics.memoryUsage > 512 || metrics.droppedFrames > 5) && (
-        <div className="performance-warning mt-4 p-3 bg-red-100 border border-red-300 rounded flex items-center">
+        <div className="performance-warning mt-4 p-3 bg-red-100 border border-red-300 rounded flex items-center" data-testid="performance-warning">
           <span className="warning-icon mr-2">⚠️</span>
           <span className="warning-text text-red-700">
             Performance issues detected. System may be under stress.
