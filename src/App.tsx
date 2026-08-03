@@ -814,14 +814,18 @@ function App() {
         </div>
         
         {/* Diagnostic Component - Temporary for debugging */}
-        <div style={{ marginTop: '20px' }}>
-          <PoseDetectionDiagnostic />
-        </div>
-        
+        {import.meta.env.DEV && (
+          <div style={{ marginTop: '20px' }}>
+            <PoseDetectionDiagnostic />
+          </div>
+        )}
+
         {/* Simple Pose Test - Temporary for debugging */}
-        <div style={{ marginTop: '20px' }}>
-          <SimplePoseTest />
-        </div>
+        {import.meta.env.DEV && (
+          <div style={{ marginTop: '20px' }}>
+            <SimplePoseTest />
+          </div>
+        )}
       </main>
     </div>
   );
