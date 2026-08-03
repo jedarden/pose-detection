@@ -1,52 +1,24 @@
-# Bead bf-3ur: PWA Functionality Verification
+# Bead bf-3ur: PWA Functionality Fix
 
-## Status: Already Resolved
+## Summary
+The PWA implementation was incomplete - the service worker file existed but was never registered.
 
-This bead was already completed in commit `1edab90` on 2026-08-03 06:13:01 -0400.
+## What Was Fixed
+Added `navigator.serviceWorker.register('/sw.js')` call to `src/main.tsx` to complete the PWA implementation.
 
-## What Was Done
+## Current State
+- ✅ Root `index.html` has `<link rel="manifest" href="./manifest.json" />`
+- ✅ `public/manifest.json` exists and is valid
+- ✅ `public/sw.js` exists with complete service worker implementation
+- ✅ Service worker registration code added to `src/main.tsx`
+- ✅ Build succeeds and all PWA files are copied to `dist/`
 
-The commit `1edab90` with message "fix(pwa): remove dead files and verify PWA functionality" completed all acceptance criteria:
+## Outdated Claims in Bead Description
+The bead description contained several outdated claims:
+1. **Claim**: "Two index.html files exist" - **FALSE**: Only one index.html at root
+2. **Claim**: "dead duplicate public/index.html" - **FALSE**: No public/index.html exists (already cleaned up)
+3. **Claim**: "sw.js does not exist" - **FALSE**: public/sw.js exists and is complete
+4. **Claim**: "webpack.config.js exists and is unused" - **FALSE**: No webpack.config.js exists (already deleted)
+5. **Claim**: "dist/index.html has ZERO occurrences of manifest" - **FALSE**: dist/index.html has manifest link
 
-1. ✅ **Real index.html has PWA wiring**: Both root `index.html` and `dist/index.html` contain:
-   - `<link rel="manifest" href="/manifest.json" />` (or `./manifest.json` in dist)
-   - Service worker registration script for `/sw.js`
-
-2. ✅ **Working service worker**: `public/sw.js` exists (183 lines) with:
-   - Proper cache naming and versioning
-   - Install event with app shell caching
-   - Activate event with cleanup
-   - Fetch event with multiple strategies (cache-first, network-first, network-only)
-   - TensorFlow.js caching support
-   - Background sync and push notification handlers
-
-3. ✅ **Valid manifest**: `public/manifest.json` exists with:
-   - App name and description
-   - Icons configuration
-   - Proper start_url and display settings
-   - Theme and background colors
-
-4. ✅ **Dead files removed**: 
-   - `public/index.html` duplicate - DELETED
-   - `webpack.config.js` (unused) - DELETED
-
-5. ✅ **Build verified**: `npm run build` succeeds and produces:
-   - `dist/index.html` with PWA manifest link
-   - `dist/manifest.json` (copied from public/)
-   - `dist/sw.js` (copied from public/)
-
-## Verification
-
-Current state as of 2026-08-03:
-- Root index.html: Has PWA manifest link and SW registration ✅
-- public/sw.js: Exists and functional ✅
-- public/manifest.json: Valid ✅
-- dist/index.html: Includes PWA functionality ✅
-- Build succeeds: ✅
-- No dead files: ✅
-
-## Conclusion
-
-The README.md claim "PWA Ready: Installable as a Progressive Web App" is now **accurate**. The PWA functionality is fully implemented and working.
-
-Co-Authored-By: Claude <noreply@anthropic.com>
+It appears someone had already partially addressed the PWA issues but forgot to add the service worker registration.
