@@ -4,6 +4,7 @@ import { PerformanceMonitor } from './components/PerformanceMonitor';
 import { CameraSelector } from './components/CameraSelector';
 import { ApplicationCoordinator } from './services/ApplicationCoordinator';
 import { GaitAnalysisService, GaitParameters } from './services/GaitAnalysisService';
+import { LoggingService } from './services/LoggingService';
 import { Pose } from '@tensorflow-models/pose-detection';
 import './App.css';
 
@@ -50,6 +51,17 @@ interface AppConfig {
 }
 
 function App() {
+  // Initialize logger
+  const logger = useRef<LoggingService>(new LoggingService()).current;
+
+  // Initialize logger on mount
+  useEffect(() => {
+    logger.initialize().catch((err) => {
+      // Silently handle logger initialization failure - don't block the app
+      console.error('Failed to initialize logger:', err);
+    });
+  }, [logger]);
+
   //Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -108,7 +120,7 @@ function App() {
   useEffect(() => {
     const initializeCoordinator = async () => {
       try {
-        console.log('Initializing ApplicationCoordinator...');
+        logger.info('Initializing ApplicationCoordinator...', undefined, 'App');
 
         const config: AppConfig = {
           camera: {
@@ -176,12 +188,12 @@ function App() {
 
         setIsInitialized(true);
         setCanStart(true);
-        console.log('ApplicationCoordinator initialized successfully');
+        logger.info('ApplicationCoordinator initialized successfully', undefined, 'App');
 
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Failed to initialize coordinator';
         setError(errorMessage);
-        console.error('Coordinator initialization error:', err);
+        logger.error('Coordinator initialization error', err, 'App');
       }
     };
 
@@ -191,7 +203,7 @@ function App() {
       // Cleanup
       if (coordinatorRef.current) {
         coordinatorRef.current.removeAllListeners();
-        coordinatorRef.current.shutdown().catch(console.error);
+        coordinatorRef.current.shutdown().catch((err) => logger.error('Coordinator cleanup error', err, 'App'));
       }
     };
   }, [selectedCameraId]);
@@ -216,7 +228,7 @@ function App() {
   // Handle errors
   const handleError = useCallback((error: any) => {
     setError(error.message || 'Unknown error occurred');
-    console.error('Application error:', error);
+    logger.error('Application error', error, 'App');
   }, []);
 
   // Handle performance updates
@@ -281,7 +293,7 @@ function App() {
 
     } catch (err) {
       const frameErrorMessage = err instanceof Error ? err.message : 'Unknown processing error';
-      console.error('Frame processing error:', frameErrorMessage, err);
+      logger.error('Frame processing error', { message: frameErrorMessage, error: err }, 'App');
     }
 
     // Continue animation loop
@@ -406,7 +418,7 @@ function App() {
     } catch (err) {
       const startErrorMessage = err instanceof Error ? err.message : 'Failed to start analysis';
       setError(startErrorMessage);
-      console.error('Start error:', err);
+      logger.error('Start error', err, 'App');
     }
   };
 
@@ -421,7 +433,7 @@ function App() {
     } catch (err) {
       const stopErrorMessage = err instanceof Error ? err.message : 'Failed to stop analysis';
       setError(stopErrorMessage);
-      console.error('Stop error:', err);
+      logger.error('Stop error', err, 'App');
     }
   };
 
@@ -472,13 +484,13 @@ function App() {
     } catch (err) {
       const resetErrorMessage = err instanceof Error ? err.message : 'Failed to reset system';
       setError(resetErrorMessage);
-      console.error('Reset error:', err);
+      logger.error('Reset error', err, 'App');
     }
   };
 
   // Handle camera selection
   const handleCameraSelect = (deviceId: string) => {
-    console.log('Camera selected:', deviceId);
+    logger.info('Camera selected', { deviceId }, 'App');
 
     // Stop current detection if running
     if (isRunning) {
@@ -527,7 +539,7 @@ function App() {
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
 
-    console.log('Exporting gait analysis data...');
+    logger.info('Exporting gait analysis data', { filename: exportFileDefaultName }, 'App');
   };
 
   // Update canvas layout

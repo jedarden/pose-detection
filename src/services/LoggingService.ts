@@ -1,6 +1,7 @@
 /**
  * Logging Service - Centralized logging system
  * Provides structured logging with different levels and persistence
+ * In production builds, debug and info logs are no-ops for performance
  */
 
 import { EventEmitter } from 'events';
@@ -16,38 +17,49 @@ export interface LogEntry {
 export class LoggingService extends EventEmitter {
   private logs: LogEntry[] = [];
   private maxLogSize = 1000;
+  private isProduction: boolean;
 
   constructor() {
     super();
+    // Detect production environment
+    this.isProduction = process.env.NODE_ENV === 'production';
   }
 
   public async initialize(): Promise<void> {
     this.emit('initialized');
   }
 
-  public error(message: string, data?: any): void {
-    this.log('error', message, data);
+  public error(message: string, data?: any, source?: string): void {
+    this.log('error', message, data, source);
   }
 
-  public warn(message: string, data?: any): void {
-    this.log('warn', message, data);
+  public warn(message: string, data?: any, source?: string): void {
+    this.log('warn', message, data, source);
   }
 
-  public info(message: string, data?: any): void {
-    this.log('info', message, data);
+  public info(message: string, data?: any, source?: string): void {
+    // In production, info logs are no-ops
+    if (this.isProduction) {
+      return;
+    }
+    this.log('info', message, data, source);
   }
 
-  public debug(message: string, data?: any): void {
-    this.log('debug', message, data);
+  public debug(message: string, data?: any, source?: string): void {
+    // In production, debug logs are no-ops (critical for per-frame logging)
+    if (this.isProduction) {
+      return;
+    }
+    this.log('debug', message, data, source);
   }
 
-  private log(level: LogEntry['level'], message: string, data?: any): void {
+  private log(level: LogEntry['level'], message: string, data?: any, source?: string): void {
     const entry: LogEntry = {
       level,
       message,
       data,
       timestamp: Date.now(),
-      source: 'LoggingService'
+      source: source || 'LoggingService'
     };
 
     this.logs.push(entry);
@@ -55,22 +67,22 @@ export class LoggingService extends EventEmitter {
       this.logs.shift();
     }
 
-    // Console output
+    // Console output (already gated at info/debug level)
     const timestamp = new Date(entry.timestamp).toISOString();
-    const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
-    
+    const logMessage = `[${timestamp}] [${level.toUpperCase()}] [${entry.source}] ${message}`;
+
     switch (level) {
       case 'error':
-        console.error(logMessage, data);
+        console.error(logMessage, data || '');
         break;
       case 'warn':
-        console.warn(logMessage, data);
+        console.warn(logMessage, data || '');
         break;
       case 'info':
-        console.info(logMessage, data);
+        console.info(logMessage, data || '');
         break;
       case 'debug':
-        console.debug(logMessage, data);
+        console.debug(logMessage, data || '');
         break;
     }
 
