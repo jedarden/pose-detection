@@ -148,59 +148,59 @@ export const VideoDisplay: React.FC<VideoDisplayProps> = ({
 
   return (
     <div className={`video-display ${className || ''}`}>
-      <div className=\"video-container\">
+      <div className="video-container">
         <video
           ref={videoRef}
           autoPlay
           muted
           playsInline
-          className=\"video-element\"
-          data-testid=\"video-element\"
+          className="video-element"
+          data-testid="video-element"
         />
         
         <canvas
           ref={canvasRef}
-          className=\"pose-overlay\"
-          data-testid=\"pose-overlay\"
+          className="pose-overlay"
+          data-testid="pose-overlay"
         />
         
         {!isActive && (
-          <div className=\"video-placeholder\">
-            <div className=\"placeholder-content\">
-              <div className=\"camera-icon\">📹</div>
+          <div className="video-placeholder">
+            <div className="placeholder-content">
+              <div className="camera-icon">📹</div>
               <p>Camera feed will appear here when analysis starts</p>
             </div>
           </div>
         )}
         
         {isActive && !videoStream && (
-          <div className=\"video-loading\">
-            <div className=\"loading-spinner\"></div>
+          <div className="video-loading">
+            <div className="loading-spinner"></div>
             <p>Initializing camera...</p>
           </div>
         )}
       </div>
       
-      <div className=\"video-info\">
-        <div className=\"info-row\">
-          <span className=\"info-label\">Status:</span>
-          <span className=\"info-value\">
+      <div className="video-info">
+        <div className="info-row">
+          <span className="info-label">Status:</span>
+          <span className="info-value">
             {isActive ? (videoStream ? 'Active' : 'Initializing') : 'Inactive'}
           </span>
         </div>
         
         {currentPose && (
-          <div className=\"info-row\">
-            <span className=\"info-label\">Pose Confidence:</span>
-            <span className=\"info-value\">
+          <div className="info-row">
+            <span className="info-label">Pose Confidence:</span>
+            <span className="info-value">
               {(currentPose.confidence * 100).toFixed(1)}%
             </span>
           </div>
         )}
         
-        <div className=\"info-row\">
-          <span className=\"info-label\">Resolution:</span>
-          <span className=\"info-value\">
+        <div className="info-row">
+          <span className="info-label">Resolution:</span>
+          <span className="info-value">
             {videoRef.current?.videoWidth || 0} × {videoRef.current?.videoHeight || 0}
           </span>
         </div>
