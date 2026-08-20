@@ -106,7 +106,7 @@ export const PerformanceMonitor: React.FC<PerformanceMonitorProps> = ({
 
       {/* Key Metrics */}
       <div className="metrics-summary grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="metrics-summary">
-        <div className="metric-item text-center p-2 bg-white rounded" data-testid="fps-counter" data-testid="fps-display">
+        <div className="metric-item text-center p-2 bg-white rounded" data-testid="fps-display">
           <span className="metric-label block text-sm text-gray-600">FPS:</span>
           <span className={`metric-value block text-lg font-bold ${getMetricStatus(metrics.frameRate, 'fps')}`} data-testid="fps-value">
             {formatValue(metrics.frameRate, '', 1)}
