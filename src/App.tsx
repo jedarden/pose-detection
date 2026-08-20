@@ -1,57 +1,94 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { ControlPanel } from './components/ControlPanel';
-import { PoseDetectionService } from './services/PoseDetectionService';
 import { PerformanceMonitor } from './components/PerformanceMonitor';
-import { PoseDetectionDiagnostic } from './components/PoseDetectionDiagnostic';
-import { SimplePoseTest } from './components/SimplePoseTest';
 import { CameraSelector } from './components/CameraSelector';
+import { ApplicationCoordinator } from './services/ApplicationCoordinator';
+import { GaitAnalysisService, GaitParameters } from './services/GaitAnalysisService';
+import { Pose } from '@tensorflow-models/pose-detection';
 import './App.css';
 
-// Extend window for debug frame counting
-declare global {
-  interface Window {
-    frameCount?: number;
-  }
+// Types for our integrated architecture
+interface AppConfig {
+  camera: {
+    width: { ideal: number };
+    height: { ideal: number };
+    frameRate: { ideal: number };
+    facingMode?: 'user' | 'environment';
+    deviceId?: string;
+  };
+  ai: {
+    modelType: 'lightning' | 'thunder';
+    enableGPU: boolean;
+    inputResolution: { width: number; height: number };
+    validation: {
+      minPoseConfidence: number;
+      minKeypointConfidence: number;
+    };
+    smoothing: {
+      smoothingFactor: number;
+      minConfidence: number;
+      maxDistance: number;
+      enableVelocitySmoothing: boolean;
+      historySize: number;
+    };
+    performance: {
+      enableFrameSkipping: boolean;
+      frameSkipInterval: number;
+      targetFPS: number;
+    };
+    maxPoses: number;
+  };
+  performance: {
+    videoResolution: { width: number; height: number };
+    frameRate: number;
+    modelType: 'lightning' | 'thunder';
+    processEveryNthFrame: number;
+    renderQuality: 'high' | 'medium' | 'low';
+    enableGPUAcceleration: boolean;
+    enableWebWorkers: boolean;
+  };
 }
 
 function App() {
+  //Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const coordinatorRef = useRef<ApplicationCoordinator | null>(null);
+  const gaitAnalysisRef = useRef<GaitAnalysisService | null>(null);
+
+  // State
   const [isRunning, setIsRunning] = useState(false);
   const [canStart, setCanStart] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const isRunningRef = useRef(false);
   const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>(undefined);
   const [showOverlays, setShowOverlays] = useState(true);
-  const showOverlaysRef = useRef(true);
 
-  // Service instances
-  const poseDetectionService = useRef<PoseDetectionService | null>(null);
-
-  // Tracking refs for real metrics
-  const previousKeypointsRef = useRef<any[] | null>(null);
-  const sessionStartTimeRef = useRef<number | null>(null);
-  const poseStartTimeRef = useRef<number | null>(null);
-  
-  // State for pose tracking metrics
-  const [poseMetrics, setPoseMetrics] = useState({
-    detectionConfidence: 0,
-    keypointCount: 0,
-    visibleKeypoints: 0,
-    poseStability: 0,
-    trackingQuality: 0,
-    movementIntensity: 0,
-    poseDuration: 0,
-    averageKeypointConfidence: 0
+  // Tracking data
+  const [currentPose, setCurrentPose] = useState<Pose | null>(null);
+  const [gaitParameters, setGaitParameters] = useState<GaitParameters>({
+    cadence: 0,
+    strideLength: 0,
+    strideTime: 0,
+    stepWidth: 0,
+    velocity: 0,
+    symmetryIndex: 0,
+    confidence: 0,
+    leftStepLength: 0,
+    rightStepLength: 0,
+    gaitPhase: {
+      left: 'mid-stance',
+      right: 'mid-stance',
+      leftProgress: 0,
+      rightProgress: 0,
+      confidence: 0
+    },
+    stanceTime: 0,
+    swingTime: 0,
+    doubleSupport: 0
   });
-  
-  // State for detected pose keypoints
-  const [currentPose, setCurrentPose] = useState(null);
-  
-  // State for performance metrics
+
+  // Performance metrics
   const [performanceMetrics, setPerformanceMetrics] = useState({
     frameRate: 0,
     averageProcessingTime: 0,
@@ -60,175 +97,145 @@ function App() {
     processingLatency: 0,
     modelInferenceTime: 0,
     renderingTime: 0,
-    overallHealth: 'good'
+    overallHealth: 'good' as const
   });
 
-  // Function to update canvas dimensions and position
-  const updateCanvasLayout = useCallback(() => {
-    if (canvasRef.current && videoRef.current && videoRef.current.videoWidth > 0) {
-      const videoWidth = videoRef.current.videoWidth;
-      const videoHeight = videoRef.current.videoHeight;
-      const containerWidth = videoRef.current.clientWidth;
-      const containerHeight = videoRef.current.clientHeight;
-      
-      const videoAspect = videoWidth / videoHeight;
-      const containerAspect = containerWidth / containerHeight;
-      
-      let scale, offsetX, offsetY;
-      
-      if (videoAspect > containerAspect) {
-        scale = containerWidth / videoWidth;
-        offsetX = 0;
-        offsetY = (containerHeight - videoHeight * scale) / 2;
-      } else {
-        scale = containerHeight / videoHeight;
-        offsetX = (containerWidth - videoWidth * scale) / 2;
-        offsetY = 0;
+  // Session tracking
+  const sessionStartTimeRef = useRef<number | null>(null);
+  const animationFrameRef = useRef<number | null>(null);
+
+  // Initialize coordinator and services
+  useEffect(() => {
+    const initializeCoordinator = async () => {
+      try {
+        console.log('Initializing ApplicationCoordinator...');
+
+        const config: AppConfig = {
+          camera: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30 }
+          },
+          ai: {
+            modelType: 'lightning',
+            enableGPU: true,
+            inputResolution: { width: 640, height: 480 },
+            validation: {
+              minPoseConfidence: 0.25,
+              minKeypointConfidence: 0.3
+            },
+            smoothing: {
+              smoothingFactor: 0.2,
+              minConfidence: 0.3,
+              maxDistance: 50,
+              enableVelocitySmoothing: true,
+              historySize: 5
+            },
+            performance: {
+              enableFrameSkipping: true,
+              frameSkipInterval: 2,
+              targetFPS: 30
+            },
+            maxPoses: 1
+          },
+          performance: {
+            videoResolution: { width: 640, height: 480 },
+            frameRate: 30,
+            modelType: 'lightning',
+            processEveryNthFrame: 1,
+            renderQuality: 'medium',
+            enableGPUAcceleration: true,
+            enableWebWorkers: false
+          }
+        };
+
+        // Add camera device ID if selected
+        if (selectedCameraId) {
+          config.camera.deviceId = selectedCameraId;
+        }
+
+        const coordinator = new ApplicationCoordinator(config);
+        coordinatorRef.current = coordinator;
+
+        // Get references to services
+        const gaitService = coordinator.getService<GaitAnalysisService>('gaitAnalysis');
+        if (gaitService) {
+          gaitAnalysisRef.current = gaitService;
+        }
+
+        // Setup event listeners
+        coordinator.on('poseDetected', handlePoseDetected);
+        coordinator.on('gaitParametersUpdated', handleGaitParametersUpdated);
+        coordinator.on('error', handleError);
+        coordinator.on('performanceUpdated', handlePerformanceUpdated);
+        coordinator.on('started', () => setIsRunning(true));
+        coordinator.on('stopped', () => setIsRunning(false));
+
+        // Initialize coordinator
+        await coordinator.initialize();
+
+        setIsInitialized(true);
+        setCanStart(true);
+        console.log('ApplicationCoordinator initialized successfully');
+
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Failed to initialize coordinator';
+        setError(errorMessage);
+        console.error('Coordinator initialization error:', err);
       }
-      
-      canvasRef.current.style.width = `${videoWidth * scale}px`;
-      canvasRef.current.style.height = `${videoHeight * scale}px`;
-      canvasRef.current.style.position = 'absolute';
-      canvasRef.current.style.left = `${offsetX}px`;
-      canvasRef.current.style.top = `${offsetY}px`;
+    };
+
+    initializeCoordinator();
+
+    return () => {
+      // Cleanup
+      if (coordinatorRef.current) {
+        coordinatorRef.current.removeAllListeners();
+        coordinatorRef.current.shutdown().catch(console.error);
+      }
+    };
+  }, [selectedCameraId]);
+
+  // Handle pose detection events
+  const handlePoseDetected = useCallback((analysis: any) => {
+    if (analysis && analysis.pose) {
+      setCurrentPose(analysis.pose);
+
+      // Feed pose data to gait analysis service
+      if (gaitAnalysisRef.current) {
+        gaitAnalysisRef.current.addPose(analysis.pose, analysis.timestamp || Date.now());
+      }
     }
   }, []);
 
-  // Handle window resize
-  useEffect(() => {
-    window.addEventListener('resize', updateCanvasLayout);
-    return () => window.removeEventListener('resize', updateCanvasLayout);
-  }, [updateCanvasLayout]);
+  // Handle gait parameters updates
+  const handleGaitParametersUpdated = useCallback((parameters: GaitParameters) => {
+    setGaitParameters(parameters);
+  }, []);
 
-  // Initialize camera and services when component mounts or camera changes
-  useEffect(() => {
-    const initializeServices = async () => {
-      try {
-        console.log('Starting service initialization...');
-        
-        // Initialize pose detection service only if not already initialized
-        if (!poseDetectionService.current) {
-          console.log('Creating new PoseDetectionService instance...');
-          poseDetectionService.current = new PoseDetectionService();
-          
-          // Configure pose detection
-          try {
-            console.log('Initializing pose detection service...');
-            await poseDetectionService.current.initialize({
-              modelType: 'lightning',
-              enableGPU: true,
-              inputResolution: { width: 640, height: 480 },
-              validation: {
-                minPoseConfidence: 0.25,
-                minKeypointConfidence: 0.3
-              },
-              smoothing: {
-                smoothingFactor: 0.2,
-                minConfidence: 0.3,
-                maxDistance: 50,
-                enableVelocitySmoothing: true,
-                historySize: 5
-              },
-              performance: {
-                enableFrameSkipping: true,
-                frameSkipInterval: 2,
-                targetFPS: 30
-              },
-              maxPoses: 1
-            });
-            
-            console.log('Pose detection service initialized successfully');
-            console.log('Service ready state:', poseDetectionService.current.isReady());
-          } catch (serviceError) {
-            console.error('Failed to initialize pose detection service:', serviceError);
-            throw serviceError;
-          }
-        }
-        
-        if (!videoRef.current) return;
-        
-        // Request camera access with specific device ID if selected
-        const videoConstraints: MediaTrackConstraints = {
-          width: { ideal: 640 },
-          height: { ideal: 480 },
-          frameRate: { ideal: 30 }
-        };
-        
-        if (selectedCameraId) {
-          videoConstraints.deviceId = { exact: selectedCameraId };
-        }
-        
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraints
-        });
-        
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-        
-        // Wait for video to load
-        videoRef.current.onloadedmetadata = () => {
-          // Set canvas dimensions to match actual video dimensions
-          if (canvasRef.current && videoRef.current) {
-            const videoWidth = videoRef.current.videoWidth;
-            const videoHeight = videoRef.current.videoHeight;
-            
-            canvasRef.current.width = videoWidth;
-            canvasRef.current.height = videoHeight;
-            
-            // Update canvas layout to match video display
-            updateCanvasLayout();
-            
-            console.log('Canvas resized to match video:', videoWidth, 'x', videoHeight);
-          }
-          
-          setIsInitialized(true);
-          setCanStart(true);
-          console.log('Camera initialized successfully');
-        };
-        
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Failed to initialize system';
-        setError(errorMessage);
-        console.error('Initialization error:', err);
-      }
-    };
+  // Handle errors
+  const handleError = useCallback((error: any) => {
+    setError(error.message || 'Unknown error occurred');
+    console.error('Application error:', error);
+  }, []);
 
-    initializeServices();
+  // Handle performance updates
+  const handlePerformanceUpdated = useCallback((metrics: any) => {
+    setPerformanceMetrics({
+      frameRate: metrics.frameRate || 0,
+      averageProcessingTime: metrics.averageProcessingTime || 0,
+      memoryUsage: metrics.memoryUsage || 0,
+      droppedFrames: metrics.droppedFrames || 0,
+      processingLatency: metrics.processingLatency || 0,
+      modelInferenceTime: metrics.modelInferenceTime || 0,
+      renderingTime: metrics.renderingTime || 0,
+      overallHealth: metrics.overallHealth || 'good'
+    });
+  }, []);
 
-    return () => {
-      console.log('Cleanup: stopping animation frame and stream...');
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-      // Don't dispose the pose detection service when changing cameras
-      // It can be reused and doesn't need to reload the model
-    };
-  }, [selectedCameraId]); // Re-initialize when camera changes
-
-  // Cleanup pose detection service only on component unmount
-  useEffect(() => {
-    return () => {
-      console.log('Component unmounting: disposing pose detection service...');
-      if (poseDetectionService.current) {
-        poseDetectionService.current.dispose();
-        poseDetectionService.current = null;
-      }
-    };
-  }, []); // Empty dependency array - only run on unmount
-
-  // Real-time pose detection and motion tracking
-  const processFrame = async () => {
-    console.log('processFrame called - video:', !!videoRef.current, 'canvas:', !!canvasRef.current);
-    
-    if (!videoRef.current || !canvasRef.current) {
-      console.log('processFrame early return - missing video or canvas');
-      return;
-    }
-    if (!poseDetectionService.current) {
-      console.log('processFrame early return - no pose detection service');
+  // Manual frame processing for canvas rendering
+  const processFrame = useCallback(async () => {
+    if (!isRunning || !videoRef.current || !canvasRef.current || !coordinatorRef.current) {
       return;
     }
 
@@ -240,169 +247,24 @@ function App() {
       // Clear canvas
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Draw test indicator to verify canvas is working
+      // Draw LIVE indicator
       ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
       ctx.fillRect(canvas.width - 50, 5, 40, 20);
       ctx.fillStyle = 'white';
       ctx.font = '12px Arial';
       ctx.fillText('LIVE', canvas.width - 45, 18);
 
-      // Debug logging
-      const frameNumber = window.frameCount = (window.frameCount || 0) + 1;
-      if (frameNumber % 30 === 0) { // Log every 30 frames to avoid spam
-        console.log(`Frame ${frameNumber} - Video ready state:`, videoRef.current.readyState);
-        console.log('Video dimensions:', videoRef.current.videoWidth, 'x', videoRef.current.videoHeight);
-      }
+      // Draw current pose if available
+      if (currentPose) {
+        drawPoseSkeleton(ctx, currentPose);
 
-      // Run pose detection
-      const poses = await poseDetectionService.current.detectPoses(videoRef.current);
-      if (frameNumber % 30 === 0) {
-        console.log('Detected poses:', poses.length, poses);
-      }
-      
-      if (poses.length > 0) {
-        const pose = poses[0];
-        const timestamp = Date.now();
-        
-        // Update current pose state
-        setCurrentPose(pose);
-        
-        // Calculate pose tracking metrics
-        const visibleKeypoints = pose.keypoints.filter(kp => kp.score > 0.3).length;
-        const totalKeypoints = pose.keypoints.length;
-        const averageConfidence = pose.keypoints.reduce((sum, kp) => sum + kp.score, 0) / totalKeypoints;
-        
-        // Calculate pose stability (based on confidence variance)
-        const confidenceVariance = pose.keypoints.reduce((sum, kp) => {
-          const diff = kp.score - averageConfidence;
-          return sum + (diff * diff);
-        }, 0) / totalKeypoints;
-        const stability = Math.max(0, 1 - confidenceVariance);
-
-        // Calculate movement intensity from frame-to-frame keypoint position changes
-        let movementIntensity = 0;
-        if (previousKeypointsRef.current && previousKeypointsRef.current.length === totalKeypoints) {
-          let totalMovement = 0;
-          let movementCount = 0;
-          for (let i = 0; i < pose.keypoints.length; i++) {
-            const currentKp = pose.keypoints[i];
-            const prevKp = previousKeypointsRef.current[i];
-            if (currentKp.score > 0.3 && prevKp.score > 0.3) {
-              const dx = currentKp.x - prevKp.x;
-              const dy = currentKp.y - prevKp.y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-              totalMovement += distance;
-              movementCount++;
-            }
-          }
-          // Normalize movement intensity: scale to 0-1 range, with typical movement in 0-100 pixel range
-          movementIntensity = movementCount > 0 ? Math.min(1, totalMovement / movementCount / 100) : 0;
-        }
-        previousKeypointsRef.current = [...pose.keypoints];
-
-        // Calculate real pose duration from actual pose detection start time
-        if (!poseStartTimeRef.current) {
-          poseStartTimeRef.current = timestamp;
-        }
-        const poseDuration = (timestamp - poseStartTimeRef.current) / 1000;
-
-        setPoseMetrics({
-          detectionConfidence: pose.confidence,
-          keypointCount: totalKeypoints,
-          visibleKeypoints: visibleKeypoints,
-          poseStability: stability,
-          trackingQuality: (averageConfidence + stability) / 2,
-          movementIntensity: movementIntensity,
-          poseDuration: poseDuration,
-          averageKeypointConfidence: averageConfidence
-        });
-        
-        // Draw pose visualization
-        ctx.strokeStyle = '#00ff00';
-        ctx.fillStyle = '#ff0000';
-        ctx.lineWidth = 2;
-
-        // Draw skeleton connections
-        const connections = [
-          [5, 6], [5, 7], [7, 9], [6, 8], [8, 10], // Arms
-          [5, 11], [6, 12], [11, 12], // Torso
-          [11, 13], [13, 15], [12, 14], [14, 16] // Legs
-        ];
-
-        // Mark that pose skeleton is being drawn
-        if (canvas.getAttribute('data-posing-skeleton') !== 'true') {
-          canvas.setAttribute('data-posing-skeleton', 'true');
-        }
-
-        connections.forEach(([from, to]) => {
-          if (pose.keypoints[from] && pose.keypoints[to] &&
-              pose.keypoints[from].score > 0.3 && pose.keypoints[to].score > 0.3) {
-            ctx.beginPath();
-            ctx.moveTo(pose.keypoints[from].x, pose.keypoints[from].y);
-            ctx.lineTo(pose.keypoints[to].x, pose.keypoints[to].y);
-            ctx.stroke();
-          }
-        });
-        
-        // Draw keypoints with confidence-based colors
-        pose.keypoints.forEach((kp, idx) => {
-          if (kp.score > 0.3) {
-            // Color based on confidence: red for low, yellow for medium, green for high
-            if (kp.score > 0.7) {
-              ctx.fillStyle = '#00ff00'; // Green for high confidence
-            } else if (kp.score > 0.5) {
-              ctx.fillStyle = '#ffff00'; // Yellow for medium confidence
-            } else {
-              ctx.fillStyle = '#ff8800'; // Orange for lower confidence
-            }
-            
-            ctx.beginPath();
-            ctx.arc(kp.x, kp.y, 4 + (kp.score * 2), 0, 2 * Math.PI);
-            ctx.fill();
-            
-            // Highlight critical keypoints (head, shoulders, hips)
-            if (idx === 0 || idx === 5 || idx === 6 || idx === 11 || idx === 12) {
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 2;
-              ctx.beginPath();
-              ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI);
-              ctx.stroke();
-            }
-          }
-        });
-        
-        // Draw pose information overlay if enabled
-        if (showOverlaysRef.current) {
-          ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-          ctx.fillRect(10, 10, 320, 160);
-          
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px Arial';
-          ctx.fillText(`Pose Confidence: ${(pose.confidence * 100).toFixed(1)}%`, 20, 30);
-          ctx.fillText(`Visible Keypoints: ${visibleKeypoints}/${totalKeypoints}`, 20, 50);
-          ctx.fillText(`Avg Keypoint Confidence: ${(averageConfidence * 100).toFixed(1)}%`, 20, 70);
-          ctx.fillText(`Pose Stability: ${(stability * 100).toFixed(1)}%`, 20, 90);
-          ctx.fillText(`Tracking Quality: ${((averageConfidence + stability) / 2 * 100).toFixed(1)}%`, 20, 110);
-          ctx.fillText(`Movement Intensity: ${(movementIntensity * 100).toFixed(1)}%`, 20, 130);
-          ctx.fillText(`Detection ID: ${pose.id || 'N/A'}`, 20, 150);
+        // Draw gait parameters overlay if enabled
+        if (showOverlays) {
+          drawGaitParametersOverlay(ctx, gaitParameters);
         }
       } else {
-        // No pose detected
-        setCurrentPose(null);
-        previousKeypointsRef.current = null;
-        poseStartTimeRef.current = null;
-        setPoseMetrics({
-          detectionConfidence: 0,
-          keypointCount: 0,
-          visibleKeypoints: 0,
-          poseStability: 0,
-          trackingQuality: 0,
-          movementIntensity: 0,
-          poseDuration: 0,
-          averageKeypointConfidence: 0
-        });
-        
-        if (showOverlaysRef.current) {
+        // No pose detected message
+        if (showOverlays) {
           ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
           ctx.fillRect(10, 10, 200, 60);
           ctx.fillStyle = '#ffffff';
@@ -411,128 +273,221 @@ function App() {
           ctx.fillText('Move into camera view', 20, 50);
         }
       }
-      
-      // Get detection stats and update performance metrics
-      const stats = poseDetectionService.current.getStats();
-      setPerformanceMetrics({
-        frameRate: stats.currentFPS,
-        averageProcessingTime: stats.avgProcessingTime,
-        memoryUsage: stats.memoryUsage,
-        droppedFrames: stats.droppedFrames || 0,
-        processingLatency: stats.avgProcessingTime,
-        modelInferenceTime: stats.avgProcessingTime * 0.7, // Estimate
-        renderingTime: stats.avgProcessingTime * 0.3, // Estimate
-        overallHealth: stats.currentFPS > 25 ? 'excellent' : 
-                      stats.currentFPS > 15 ? 'good' : 
-                      stats.currentFPS > 10 ? 'fair' : 'poor'
-      });
-      
+
       // Draw performance overlay if enabled
-      if (showOverlaysRef.current) {
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(canvas.width - 220, 10, 210, 80);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '10px Arial';
-        ctx.fillText(`FPS: ${stats.currentFPS.toFixed(1)}`, canvas.width - 210, 25);
-        ctx.fillText(`Processing: ${stats.avgProcessingTime.toFixed(1)}ms`, canvas.width - 210, 40);
-        ctx.fillText(`Memory: ${stats.memoryUsage.toFixed(1)}MB`, canvas.width - 210, 55);
-        ctx.fillText(`Poses Detected: ${stats.totalPoses || 0}`, canvas.width - 210, 70);
+      if (showOverlays) {
+        drawPerformanceOverlay(ctx, performanceMetrics, canvas.width);
       }
-      
+
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Unknown processing error';
       console.error('Frame processing error:', err);
-      setError(`Processing error: ${errorMessage}`);
     }
-    
-    // Continue animation loop only if still running
-    if (isRunningRef.current) {
+
+    // Continue animation loop
+    if (isRunning) {
       animationFrameRef.current = requestAnimationFrame(processFrame);
     }
+  }, [isRunning, currentPose, gaitParameters, performanceMetrics, showOverlays]);
+
+  // Draw pose skeleton on canvas
+  const drawPoseSkeleton = (ctx: CanvasRenderingContext2D, pose: Pose) => {
+    const { keypoints } = pose;
+
+    // Draw skeleton connections
+    const connections = [
+      [5, 6], [5, 7], [7, 9], [6, 8], [8, 10], // Arms
+      [5, 11], [6, 12], [11, 12], // Torso
+      [11, 13], [13, 15], [12, 14], [14, 16] // Legs
+    ];
+
+    ctx.strokeStyle = '#00ff00';
+    ctx.fillStyle = '#ff0000';
+    ctx.lineWidth = 2;
+
+    connections.forEach(([from, to]) => {
+      if (keypoints[from] && keypoints[to] &&
+          keypoints[from].score > 0.3 && keypoints[to].score > 0.3) {
+        ctx.beginPath();
+        ctx.moveTo(keypoints[from].x, keypoints[from].y);
+        ctx.lineTo(keypoints[to].x, keypoints[to].y);
+        ctx.stroke();
+      }
+    });
+
+    // Draw keypoints with confidence-based colors
+    keypoints.forEach((kp, idx) => {
+      if (kp.score > 0.3) {
+        if (kp.score > 0.7) {
+          ctx.fillStyle = '#00ff00'; // Green for high confidence
+        } else if (kp.score > 0.5) {
+          ctx.fillStyle = '#ffff00'; // Yellow for medium confidence
+        } else {
+          ctx.fillStyle = '#ff8800'; // Orange for lower confidence
+        }
+
+        ctx.beginPath();
+        ctx.arc(kp.x, kp.y, 4 + (kp.score * 2), 0, 2 * Math.PI);
+        ctx.fill();
+
+        // Highlight critical keypoints
+        if (idx === 0 || idx === 5 || idx === 6 || idx === 11 || idx === 12) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI);
+          ctx.stroke();
+        }
+      }
+    });
   };
 
+  // Draw gait parameters overlay
+  const drawGaitParametersOverlay = (ctx: CanvasRenderingContext2D, params: GaitParameters) => {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(10, 10, 280, 180);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px Arial';
+
+    let y = 30;
+    const lineHeight = 18;
+
+    ctx.fillText('Gait Analysis Parameters', 20, y);
+    y += lineHeight + 5;
+
+    ctx.fillText(`Cadence: ${params.cadence.toFixed(1)} steps/min`, 20, y); y += lineHeight;
+    ctx.fillText(`Stride Length: ${params.strideLength.toFixed(2)} m`, 20, y); y += lineHeight;
+    ctx.fillText(`Velocity: ${params.velocity.toFixed(2)} m/s`, 20, y); y += lineHeight;
+    ctx.fillText(`Symmetry Index: ${params.symmetryIndex.toFixed(1)}%`, 20, y); y += lineHeight;
+    ctx.fillText(`Left Phase: ${params.gaitPhase.left}`, 20, y); y += lineHeight;
+    ctx.fillText(`Right Phase: ${params.gaitPhase.right}`, 20, y); y += lineHeight;
+    ctx.fillText(`Confidence: ${(params.confidence * 100).toFixed(1)}%`, 20, y);
+  };
+
+  // Draw performance overlay
+  const drawPerformanceOverlay = (ctx: CanvasRenderingContext2D, metrics: any, canvasWidth: number) => {
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(canvasWidth - 220, 10, 210, 80);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '10px Arial';
+    ctx.fillText(`FPS: ${metrics.frameRate.toFixed(1)}`, canvasWidth - 210, 25);
+    ctx.fillText(`Processing: ${metrics.averageProcessingTime.toFixed(1)}ms`, canvasWidth - 210, 40);
+    ctx.fillText(`Memory: ${metrics.memoryUsage.toFixed(1)}MB`, canvasWidth - 210, 55);
+    ctx.fillText(`Health: ${metrics.overallHealth}`, canvasWidth - 210, 70);
+  };
+
+  // Start frame processing loop when running
+  useEffect(() => {
+    if (isRunning) {
+      animationFrameRef.current = requestAnimationFrame(processFrame);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [isRunning, processFrame]);
+
+  // Handle start button
   const handleStart = async () => {
-    console.log('handleStart called - isInitialized:', isInitialized);
-    if (!isInitialized) {
-      setError('Camera not initialized');
+    if (!isInitialized || !coordinatorRef.current) {
+      setError('System not initialized');
       return;
     }
 
     try {
+      sessionStartTimeRef.current = Date.now();
+      await coordinatorRef.current.start();
       setIsRunning(true);
-      isRunningRef.current = true;
       setCanStart(false);
       setError(null);
-
-      // Initialize session tracking
-      sessionStartTimeRef.current = Date.now();
-      previousKeypointsRef.current = null;
-      poseStartTimeRef.current = null;
-
-      console.log('Starting pose detection and motion tracking...');
-      console.log('PoseDetectionService ready:', poseDetectionService.current?.isReady());
-
-      // Start the animation loop
-      console.log('Starting animation frame loop...');
-      animationFrameRef.current = requestAnimationFrame(processFrame);
-      console.log('Animation frame ID:', animationFrameRef.current);
     } catch (err) {
-      setError('Failed to start detection');
+      setError('Failed to start analysis');
       console.error('Start error:', err);
     }
   };
 
-  const handleStop = () => {
-    setIsRunning(false);
-    isRunningRef.current = false;
-    setCanStart(true);
+  // Handle stop button
+  const handleStop = async () => {
+    if (!coordinatorRef.current) return;
 
-    if (animationFrameRef.current) {
-      cancelAnimationFrame(animationFrameRef.current);
-      animationFrameRef.current = null;
+    try {
+      await coordinatorRef.current.stop();
+      setIsRunning(false);
+      setCanStart(true);
+    } catch (err) {
+      setError('Failed to stop analysis');
+      console.error('Stop error:', err);
     }
-
-    console.log('Stopping pose detection...');
   };
 
-  const handleReset = () => {
-    handleStop();
+  // Handle reset button
+  const handleReset = async () => {
+    if (!coordinatorRef.current) return;
 
-    // Reset all tracking state
-    sessionStartTimeRef.current = null;
-    previousKeypointsRef.current = null;
-    poseStartTimeRef.current = null;
+    try {
+      await handleStop();
 
-    // Clear canvas
-    if (canvasRef.current) {
-      const ctx = canvasRef.current.getContext('2d');
-      if (ctx) {
-        ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      if (gaitAnalysisRef.current) {
+        gaitAnalysisRef.current.reset();
       }
-    }
 
-    console.log('Resetting pose detection system...');
+      // Reset gait parameters
+      setGaitParameters({
+        cadence: 0,
+        strideLength: 0,
+        strideTime: 0,
+        stepWidth: 0,
+        velocity: 0,
+        symmetryIndex: 0,
+        confidence: 0,
+        leftStepLength: 0,
+        rightStepLength: 0,
+        gaitPhase: {
+          left: 'mid-stance',
+          right: 'mid-stance',
+          leftProgress: 0,
+          rightProgress: 0,
+          confidence: 0
+        },
+        stanceTime: 0,
+        swingTime: 0,
+        doubleSupport: 0
+      });
+
+      setCurrentPose(null);
+      sessionStartTimeRef.current = null;
+
+      // Clear canvas
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) {
+          ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+        }
+      }
+    } catch (err) {
+      setError('Failed to reset system');
+      console.error('Reset error:', err);
+    }
   };
 
+  // Handle camera selection
   const handleCameraSelect = (deviceId: string) => {
     console.log('Camera selected:', deviceId);
-    
+
     // Stop current detection if running
     if (isRunning) {
       handleStop();
     }
-    
-    // Stop current stream
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    
-    // Set new camera ID - will trigger re-initialization
+
     setSelectedCameraId(deviceId);
   };
 
+  // Handle export
   const handleExport = () => {
+    if (!coordinatorRef.current) return;
+
     const sessionEndTime = Date.now();
     const sessionDuration = sessionStartTimeRef.current
       ? sessionEndTime - sessionStartTimeRef.current
@@ -540,14 +495,13 @@ function App() {
 
     const exportData = {
       timestamp: new Date().toISOString(),
-      poseTrackingMetrics: {
-        ...poseMetrics
+      gaitAnalysis: {
+        parameters: gaitParameters,
+        timestamp: Date.now()
       },
       currentPose: currentPose ? {
         keypoints: currentPose.keypoints,
-        confidence: currentPose.confidence,
-        boundingBox: currentPose.boundingBox,
-        id: currentPose.id
+        confidence: currentPose.score
       } : null,
       performanceMetrics: {
         ...performanceMetrics
@@ -555,34 +509,73 @@ function App() {
       session: {
         duration: sessionDuration,
         startTime: sessionStartTimeRef.current ? new Date(sessionStartTimeRef.current).toISOString() : null,
-        endTime: new Date(sessionEndTime).toISOString(),
-        framesProcessed: poseDetectionService.current ? poseDetectionService.current.getStats().totalPoses : 0,
-        averageProcessingTime: poseDetectionService.current ? poseDetectionService.current.getStats().avgProcessingTime : 0,
-        currentFPS: poseDetectionService.current ? poseDetectionService.current.getStats().currentFPS : 0,
-        memoryUsage: poseDetectionService.current ? poseDetectionService.current.getStats().memoryUsage : 0
+        endTime: new Date(sessionEndTime).toISOString()
       }
     };
-    
+
     const dataStr = JSON.stringify(exportData, null, 2);
     const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
-    const exportFileDefaultName = `pose-tracking-data-${new Date().toISOString().split('T')[0]}.json`;
-    
+
+    const exportFileDefaultName = `gait-analysis-${new Date().toISOString().split('T')[0]}.json`;
+
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
-    
-    console.log('Exporting pose detection and tracking data...');
+
+    console.log('Exporting gait analysis data...');
   };
+
+  // Update canvas layout
+  useEffect(() => {
+    const updateCanvasLayout = () => {
+      if (canvasRef.current && videoRef.current && videoRef.current.videoWidth > 0) {
+        const videoWidth = videoRef.current.videoWidth;
+        const videoHeight = videoRef.current.videoHeight;
+        const containerWidth = videoRef.current.clientWidth;
+        const containerHeight = videoRef.current.clientHeight;
+
+        const videoAspect = videoWidth / videoHeight;
+        const containerAspect = containerWidth / containerHeight;
+
+        let scale, offsetX, offsetY;
+
+        if (videoAspect > containerAspect) {
+          scale = containerWidth / videoWidth;
+          offsetX = 0;
+          offsetY = (containerHeight - videoHeight * scale) / 2;
+        } else {
+          scale = containerHeight / videoHeight;
+          offsetX = (containerWidth - videoWidth * scale) / 2;
+          offsetY = 0;
+        }
+
+        canvasRef.current.style.width = `${videoWidth * scale}px`;
+        canvasRef.current.style.height = `${videoHeight * scale}px`;
+        canvasRef.current.style.position = 'absolute';
+        canvasRef.current.style.left = `${offsetX}px`;
+        canvasRef.current.style.top = `${offsetY}px`;
+
+        // Also set actual canvas dimensions
+        canvasRef.current.width = videoWidth;
+        canvasRef.current.height = videoHeight;
+      }
+    };
+
+    updateCanvasLayout();
+
+    const handleResize = () => updateCanvasLayout();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isInitialized]);
 
   return (
     <div className="App" data-testid="gait-detection-app">
       <header className="App-header">
-        <h1 data-testid="app-title">Human Pose Detection & Motion Tracking</h1>
-        <p>Real-time computer vision for human pose estimation and movement analysis</p>
+        <h1 data-testid="app-title">Human Pose Detection & Gait Analysis</h1>
+        <p>Real-time computer vision for human pose estimation and gait analysis</p>
       </header>
-      
+
       <main className="App-main">
         {error && (
           <div className="error-message" data-testid="error-message" style={{
@@ -613,32 +606,28 @@ function App() {
             </button>
           </div>
         )}
-        
+
         {/* Camera Selector */}
-        <CameraSelector 
+        <CameraSelector
           onCameraSelect={handleCameraSelect}
           currentDeviceId={selectedCameraId}
           className="camera-selector-container"
         />
-        
+
         {/* Overlay Toggle */}
         <div style={{ marginBottom: '10px' }} data-testid="overlay-toggle-container">
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
             <input
               type="checkbox"
               checked={showOverlays}
-              onChange={(e) => {
-                console.log('Overlay toggle changed:', e.target.checked);
-                setShowOverlays(e.target.checked);
-                showOverlaysRef.current = e.target.checked;
-              }}
+              onChange={(e) => setShowOverlays(e.target.checked)}
               style={{ width: '16px', height: '16px' }}
               data-testid="show-overlays-checkbox"
             />
             <span style={{ fontWeight: 'bold' }}>Show Detection Overlays</span>
           </label>
         </div>
-        
+
         <div className="video-container" data-testid="video-container" style={{ position: 'relative', display: 'inline-block' }}>
           <video
             ref={videoRef}
@@ -659,7 +648,6 @@ function App() {
             width="640"
             height="480"
             data-testid="skeleton-canvas"
-            data-testid="canvas-overlay"
             style={{
               position: 'absolute',
               top: '2px',
@@ -673,7 +661,7 @@ function App() {
             }}
           />
         </div>
-        
+
         <ControlPanel
           onStart={handleStart}
           onStop={handleStop}
@@ -682,150 +670,116 @@ function App() {
           isRunning={isRunning}
           canStart={canStart && isInitialized}
         />
-        
+
         <div className="status" data-testid="camera-status">
           Status: {isRunning ? 'Running' : isInitialized ? 'Ready' : 'Initializing...'}
         </div>
-        
-        {/* Pose Detection Metrics */}
-        <div className="pose-metrics" data-testid="pose-metrics" style={{
+
+        {/* Gait Analysis Parameters Display */}
+        <div className="gait-parameters" data-testid="gait-parameters" style={{
           marginTop: '20px',
           padding: '20px',
-          backgroundColor: '#f5f5f5',
+          backgroundColor: '#f0f8ff',
           borderRadius: '8px',
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
           gap: '15px'
         }}>
-          <h3 style={{ gridColumn: '1 / -1', margin: '0 0 10px 0' }}>Real-time Pose Detection Metrics</h3>
-          
-          <div className="parameter-card" data-testid="pose-confidence" style={{
+          <h3 style={{ gridColumn: '1 / -1', margin: '0 0 10px 0' }}>Real-time Gait Analysis</h3>
+
+          <div className="parameter-card" data-testid="gait-cadence" style={{
             backgroundColor: 'white',
             padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Detection Confidence</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="pose-confidence-value">
-              {(poseMetrics.detectionConfidence * 100).toFixed(1)}%
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Cadence</h4>
+            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="gait-cadence-value">
+              {gaitParameters.cadence.toFixed(1)} steps/min
             </p>
           </div>
-          
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+
+          <div className="parameter-card" data-testid="gait-stride-length" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Visible Keypoints</h4>
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Stride Length</h4>
             <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {poseMetrics.visibleKeypoints}/{poseMetrics.keypointCount}
+              {gaitParameters.strideLength.toFixed(2)} m
             </p>
           </div>
-          
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+
+          <div className="parameter-card" data-testid="gait-velocity" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Pose Stability</h4>
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Velocity</h4>
             <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {(poseMetrics.poseStability * 100).toFixed(1)}%
+              {gaitParameters.velocity.toFixed(2)} m/s
             </p>
           </div>
-          
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+
+          <div className="parameter-card" data-testid="gait-symmetry" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Tracking Quality</h4>
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Symmetry Index</h4>
             <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {(poseMetrics.trackingQuality * 100).toFixed(1)}%
+              {gaitParameters.symmetryIndex.toFixed(1)}%
             </p>
           </div>
-          
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+
+          <div className="parameter-card" data-testid="gait-phase-left" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Movement Intensity</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {(poseMetrics.movementIntensity * 100).toFixed(1)}%
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Left Phase</h4>
+            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
+              {gaitParameters.gaitPhase.left}
             </p>
           </div>
-          
-          <div className="parameter-card" style={{ 
-            backgroundColor: 'white', 
-            padding: '15px', 
+
+          <div className="parameter-card" data-testid="gait-phase-right" style={{
+            backgroundColor: 'white',
+            padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Avg Keypoint Confidence</h4>
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Right Phase</h4>
+            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
+              {gaitParameters.gaitPhase.right}
+            </p>
+          </div>
+
+          <div className="parameter-card" data-testid="gait-confidence" style={{
+            backgroundColor: 'white',
+            padding: '15px',
+            borderRadius: '4px',
+            border: '1px solid #ddd'
+          }}>
+            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Analysis Confidence</h4>
             <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {(poseMetrics.averageKeypointConfidence * 100).toFixed(1)}%
+              {(gaitParameters.confidence * 100).toFixed(1)}%
             </p>
           </div>
         </div>
-        
-        {/* Keypoint Information */}
-        {currentPose && (
-          <div className="keypoint-info" style={{ 
-            marginTop: '20px', 
-            padding: '20px', 
-            backgroundColor: '#f0f8ff', 
-            borderRadius: '8px'
-          }}>
-            <h3 style={{ margin: '0 0 15px 0' }}>Detected Keypoints</h3>
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))',
-              gap: '10px',
-              maxHeight: '200px',
-              overflowY: 'auto'
-            }}>
-              {currentPose.keypoints.map((kp, idx) => (
-                <div key={idx} style={{ 
-                  padding: '8px', 
-                  backgroundColor: kp.score > 0.3 ? '#e8f5e8' : '#f5f5f5',
-                  borderRadius: '4px',
-                  fontSize: '12px'
-                }}>
-                  <strong>{kp.name}</strong><br/>
-                  Confidence: {(kp.score * 100).toFixed(1)}%<br/>
-                  Position: ({kp.x.toFixed(0)}, {kp.y.toFixed(0)})
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        
+
         {/* Performance Monitor */}
         <div style={{ marginTop: '20px' }}>
-          <PerformanceMonitor 
+          <PerformanceMonitor
             metrics={performanceMetrics}
-            coordinator={null} // Would need ApplicationCoordinator in full implementation
-            className="pose-performance-monitor"
+            coordinator={null}
+            className="gait-performance-monitor"
           />
         </div>
-        
-        {/* Diagnostic Component - Temporary for debugging */}
-        {import.meta.env.DEV && (
-          <div style={{ marginTop: '20px' }}>
-            <PoseDetectionDiagnostic />
-          </div>
-        )}
-
-        {/* Simple Pose Test - Temporary for debugging */}
-        {import.meta.env.DEV && (
-          <div style={{ marginTop: '20px' }}>
-            <SimplePoseTest />
-          </div>
-        )}
       </main>
     </div>
   );
