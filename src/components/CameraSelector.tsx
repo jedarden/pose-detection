@@ -107,7 +107,7 @@ export const CameraSelector: React.FC<CameraSelectorProps> = ({
       </label>
       <select
         id="camera-select"
-        data-testid="camera-select"
+        data-testid="available-cameras-list"
         value={currentDeviceId || ''}
         onChange={handleCameraChange}
         style={{
@@ -127,10 +127,12 @@ export const CameraSelector: React.FC<CameraSelectorProps> = ({
         ))}
       </select>
       
-      <span style={{ 
-        marginLeft: '10px', 
-        fontSize: '12px', 
-        color: '#666' 
+      <span
+        data-testid="camera-status"
+        style={{
+        marginLeft: '10px',
+        fontSize: '12px',
+        color: '#666'
       }}>
         ({cameras.length} cameras detected)
       </span>
