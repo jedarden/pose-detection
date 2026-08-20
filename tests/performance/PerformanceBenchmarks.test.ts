@@ -393,8 +393,8 @@ describe('Performance Benchmarks', () => {
       expect(finalState.error).toBeNull();
     });
 
-    // Helper method for stress operations
-    private async performStressOperation(coordinator: ApplicationCoordinator): Promise<void> {
+    // Helper function for stress operations
+    const performStressOperation = async (coordinator: ApplicationCoordinator): Promise<void> => {
       const operations = [
         // Heavy pose processing
         () => {
