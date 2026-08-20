@@ -280,7 +280,8 @@ function App() {
       }
 
     } catch (err) {
-      console.error('Frame processing error:', err);
+      const frameErrorMessage = err instanceof Error ? err.message : 'Unknown processing error';
+      console.error('Frame processing error:', frameErrorMessage, err);
     }
 
     // Continue animation loop
@@ -403,7 +404,8 @@ function App() {
       setCanStart(false);
       setError(null);
     } catch (err) {
-      setError('Failed to start analysis');
+      const startErrorMessage = err instanceof Error ? err.message : 'Failed to start analysis';
+      setError(startErrorMessage);
       console.error('Start error:', err);
     }
   };
@@ -417,7 +419,8 @@ function App() {
       setIsRunning(false);
       setCanStart(true);
     } catch (err) {
-      setError('Failed to stop analysis');
+      const stopErrorMessage = err instanceof Error ? err.message : 'Failed to stop analysis';
+      setError(stopErrorMessage);
       console.error('Stop error:', err);
     }
   };
@@ -467,7 +470,8 @@ function App() {
         }
       }
     } catch (err) {
-      setError('Failed to reset system');
+      const resetErrorMessage = err instanceof Error ? err.message : 'Failed to reset system';
+      setError(resetErrorMessage);
       console.error('Reset error:', err);
     }
   };
