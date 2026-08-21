@@ -663,7 +663,7 @@ function App() {
             ref={canvasRef}
             width="640"
             height="480"
-            data-testid="skeleton-canvas"
+            data-testid="canvas-overlay"
             style={{
               position: 'absolute',
               top: '2px',
@@ -775,14 +775,14 @@ function App() {
             </p>
           </div>
 
-          <div className="parameter-card" data-testid="gait-confidence" style={{
+          <div className="parameter-card" data-testid="pose-confidence" style={{
             backgroundColor: 'white',
             padding: '15px',
             borderRadius: '4px',
             border: '1px solid #ddd'
           }}>
             <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Analysis Confidence</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
+            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="pose-confidence-value">
               {(gaitParameters.confidence * 100).toFixed(1)}%
             </p>
           </div>
