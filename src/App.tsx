@@ -663,7 +663,7 @@ function App() {
             ref={canvasRef}
             width="640"
             height="480"
-            data-testid="canvas-overlay"
+            data-testid="skeleton-canvas"
             style={{
               position: 'absolute',
               top: '2px',
