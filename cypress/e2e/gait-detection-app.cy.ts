@@ -157,12 +157,13 @@ describe('Gait Detection Application - E2E Tests', () => {
     });
   });
 
+  // SKIP: Feature not implemented - see posedete-7d445eed
+  // Gait Analysis features are not implemented in the current App:
+  // - Gait parameters display with specific data-testids (cadence-value, stride-length-value, etc.)
+  // - Gait calibration dialog (calibration-dialog, calibration-trigger-button, calibration-complete-button)
+  // - Real-time gait parameter updates
+  // - Individual gait confidence tracking (gait-confidence, gait-confidence-bar)
   describe.skip('Gait Analysis - NOT IMPLEMENTED', () => {
-    // The following features are not implemented in the current App:
-    // - Gait parameters display (cadence, stride length, step width, velocity, symmetry)
-    // - Gait calibration dialog
-    // - Real-time gait parameter updates
-    // - Individual gait confidence tracking
     it('should display gait parameters', () => {
       cy.waitForGaitAnalysis();
 
@@ -270,12 +271,12 @@ describe('Gait Detection Application - E2E Tests', () => {
     });
   });
 
+  // SKIP: Feature not implemented - see posedete-7d445eed
+  // Export Dialog is not currently integrated into App.tsx
+  // The ExportDialog component exists in src/components/ExportDialog.tsx
+  // but the current App.tsx uses direct download via handleExport()
+  // These tests are for when the dialog is integrated in the future
   describe.skip('Export Dialog - NOT IN USE', () => {
-    // The ExportDialog component exists in src/components/ExportDialog.tsx
-    // but is not currently integrated into App.tsx
-    // The current App.tsx uses direct download via handleExport()
-    // These tests are for when the dialog is integrated in the future
-
     it('should export pose detection data as JSON via dialog', () => {
       cy.get('[data-testid="export-button"]').click();
       cy.get('[data-testid="export-dialog"]').should('be.visible');
@@ -369,10 +370,12 @@ describe('Gait Detection Application - E2E Tests', () => {
     });
   });
 
+  // SKIP: Feature not implemented - see posedete-7d445eed
+  // Multi-person detection features are not implemented:
+  // - person-N-gait-params (person-1-gait-params, person-2-gait-params, person-3-gait-params, etc.)
+  // - person-count, tracked-person testids
+  // - Individual person tracking and analysis
   describe.skip('Multi-Person Detection - NOT IMPLEMENTED', () => {
-    // The current implementation only supports single-person detection
-    // Multi-person tracking features are not implemented
-
     beforeEach(() => {
       // Setup multi-person detection
       cy.window().then((win) => {
@@ -449,10 +452,11 @@ describe('Gait Detection Application - E2E Tests', () => {
     });
   });
 
+  // SKIP: Feature not implemented - see posedete-7d445eed
+  // Screen reader announcement features are not implemented:
+  // - sr-announcements, sr-live-region testids
+  // - ARIA live regions for status announcements
   describe.skip('Screen Reader Announcements - NOT IMPLEMENTED', () => {
-    // Screen reader announcement region (sr-announcements) is not implemented in the current App
-    // This would require adding a live region for ARIA announcements
-
     it('should announce status changes to screen readers', () => {
       cy.get('[data-testid="sr-announcements"]').should('exist');
 
@@ -464,9 +468,11 @@ describe('Gait Detection Application - E2E Tests', () => {
     });
   });
 
+  // SKIP: Feature not implemented - see posedete-7d445eed
+  // Responsive layout features are not implemented:
+  // - tablet-layout, desktop-layout, mobile-layout testids
+  // - Responsive breakpoints and adaptive UI
   describe.skip('Responsive Design - NOT IMPLEMENTED', () => {
-    // Responsive layout testids and specific mobile/tablet/desktop layouts are not implemented
-
     it('should work on mobile devices', () => {
       cy.viewport('iphone-x');
 
