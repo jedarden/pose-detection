@@ -107,7 +107,7 @@ export const CameraSelector: React.FC<CameraSelectorProps> = ({
       </label>
       <select
         id="camera-select"
-        data-testid="available-cameras-list"
+        data-testid="camera-select"
         value={currentDeviceId || ''}
         onChange={handleCameraChange}
         style={{
