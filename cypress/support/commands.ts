@@ -4,7 +4,7 @@
 
 // Mock camera access
 Cypress.Commands.add('mockCameraAccess', (options = {}) => {
-  cy.window().then((win) => {
+  cy.on('window:before:load', (win) => {
     const defaultOptions = {
       width: 1280,
       height: 720,
@@ -51,18 +51,18 @@ Cypress.Commands.add('mockCameraAccess', (options = {}) => {
 // Mock camera access denial
 Cypress.Commands.add('mockCameraAccessDenied', (errorMessage = 'Permission denied') => {
   cy.window().then((win) => {
-    const error = new Error(errorMessage);
+    const error = new win.Error(errorMessage);
     error.name = 'NotAllowedError';
-    
-    cy.stub(win.navigator.mediaDevices, 'getUserMedia')
-      .as('getUserMediaDenied')
-      .rejects(error);
+
+    const getUserMedia = win.navigator.mediaDevices.getUserMedia as any;
+    getUserMedia.rejects(error);
+    cy.wrap(getUserMedia).as('getUserMediaDenied');
   });
 });
 
 // Mock TensorFlow.js and pose detection
-Cypress.Commands.add('mockTensorFlowJS', () => {
-  cy.window().then((win) => {
+Cypress.Commands.add('mockTensorFlowJS', (options: { createDetectorError?: string } = {}) => {
+  cy.on('window:before:load', (win) => {
     // Mock TensorFlow.js
     const mockTf = {
       ready: cy.stub().as('tfReady').resolves(),
@@ -76,7 +76,7 @@ Cypress.Commands.add('mockTensorFlowJS', () => {
 
     // Mock pose detection
     const mockPoseDetector = {
-      estimatePoses: cy.stub().as('estimatePoses').resolves([
+      estimatePoses: Cypress.sinon.stub().resolves([
         {
           keypoints: Array.from({ length: 17 }, (_, i) => ({
             x: 100 + i * 10,
@@ -90,8 +90,15 @@ Cypress.Commands.add('mockTensorFlowJS', () => {
       dispose: cy.stub().as('poseDetectorDispose')
     };
 
+    const createDetector = cy.stub().as('createDetector');
+    if (options.createDetectorError) {
+      createDetector.rejects(new win.Error(options.createDetectorError));
+    } else {
+      createDetector.resolves(mockPoseDetector);
+    }
+
     const mockPoseDetection = {
-      createDetector: cy.stub().as('createDetector').resolves(mockPoseDetector),
+      createDetector,
       SupportedModels: {
         MoveNet: 'MoveNet',
         PoseNet: 'PoseNet',
@@ -112,14 +119,45 @@ Cypress.Commands.add('mockTensorFlowJS', () => {
   });
 });
 
+type CreateElementHandler = () => unknown;
+
+type CreateElementInterceptor = {
+  handlers: Map<string, CreateElementHandler>;
+  originalCreateElement: (tagName: string) => HTMLElement;
+};
+
+type CreateElementInterceptorWindow = Window & {
+  __cypressCreateElementInterceptor?: CreateElementInterceptor;
+};
+
+const getCreateElementHandlers = (win: Window) => {
+  const interceptorWindow = win as CreateElementInterceptorWindow;
+
+  if (interceptorWindow.__cypressCreateElementInterceptor) {
+    return interceptorWindow.__cypressCreateElementInterceptor;
+  }
+
+  const originalCreateElement = win.document.createElement.bind(win.document);
+  const handlers = new Map<string, CreateElementHandler>();
+
+  Cypress.sinon.stub(win.document, 'createElement').callsFake((tagName: string) => {
+    const handler = handlers.get(tagName);
+    return handler ? handler() : originalCreateElement(tagName);
+  });
+
+  const interceptor = { handlers, originalCreateElement };
+  interceptorWindow.__cypressCreateElementInterceptor = interceptor;
+  return interceptor;
+};
+
 // Mock video element with fake video data
 Cypress.Commands.add('mockVideoElement', () => {
-  cy.window().then((win) => {
-    const originalCreateElement = win.document.createElement;
-    
-    cy.stub(win.document, 'createElement').callsFake((tagName) => {
-      if (tagName === 'video') {
-        const mockVideo = originalCreateElement.call(win.document, 'video');
+  cy.on('window:before:load', (win) => {
+    const { handlers, originalCreateElement } = getCreateElementHandlers(win);
+
+    handlers.set('video', () => {
+        const mockVideo = originalCreateElement('video');
+        let metadataHandler: ((event: Event) => void) | null = null;
         
         // Add mock properties
         Object.defineProperties(mockVideo, {
@@ -127,64 +165,72 @@ Cypress.Commands.add('mockVideoElement', () => {
           videoHeight: { value: 720, writable: true },
           currentTime: { value: 0, writable: true },
           duration: { value: 100, writable: true },
-          paused: { value: false, writable: true }
+          paused: { value: false, writable: true },
+          srcObject: { value: null, writable: true }
+        });
+
+        Object.defineProperty(mockVideo, 'onloadedmetadata', {
+          configurable: true,
+          get: () => metadataHandler,
+          set: (handler: ((event: Event) => void) | null) => {
+            metadataHandler = handler;
+            if (handler) {
+              win.setTimeout(() => handler(new win.Event('loadedmetadata')), 0);
+            }
+          }
         });
         
         // Mock play/pause methods
-        mockVideo.play = cy.stub().as('videoPlay').resolves();
-        mockVideo.pause = cy.stub().as('videoPause');
+        mockVideo.play = Cypress.sinon.stub().resolves();
+        mockVideo.pause = Cypress.sinon.stub();
         
         // Auto-trigger metadata loaded event
-        setTimeout(() => {
-          const event = new Event('loadedmetadata');
-          mockVideo.dispatchEvent(event);
+        win.setTimeout(() => {
+          if (!metadataHandler) {
+            mockVideo.dispatchEvent(new win.Event('loadedmetadata'));
+          }
         }, 100);
         
         return mockVideo;
-      }
-      return originalCreateElement.call(win.document, tagName);
     });
   });
 });
 
 // Mock canvas for rendering
 Cypress.Commands.add('mockCanvas', () => {
-  cy.window().then((win) => {
-    const originalCreateElement = win.document.createElement;
-    
-    cy.stub(win.document, 'createElement').callsFake((tagName) => {
-      if (tagName === 'canvas') {
-        const mockCanvas = originalCreateElement.call(win.document, 'canvas');
+  cy.on('window:before:load', (win) => {
+    const { handlers, originalCreateElement } = getCreateElementHandlers(win);
+
+    handlers.set('canvas', () => {
+        const mockCanvas = originalCreateElement('canvas');
         
         const mockContext = {
           fillStyle: '#000000',
           strokeStyle: '#000000',
           lineWidth: 1,
-          clearRect: cy.stub().as('clearRect'),
-          fillRect: cy.stub().as('fillRect'),
-          strokeRect: cy.stub().as('strokeRect'),
-          beginPath: cy.stub().as('beginPath'),
-          moveTo: cy.stub().as('moveTo'),
-          lineTo: cy.stub().as('lineTo'),
-          closePath: cy.stub().as('closePath'),
-          stroke: cy.stub().as('stroke'),
-          fill: cy.stub().as('fill'),
-          arc: cy.stub().as('arc'),
-          drawImage: cy.stub().as('drawImage'),
-          getImageData: cy.stub().as('getImageData').returns({
+          clearRect: Cypress.sinon.stub(),
+          fillRect: Cypress.sinon.stub(),
+          strokeRect: Cypress.sinon.stub(),
+          beginPath: Cypress.sinon.stub(),
+          moveTo: Cypress.sinon.stub(),
+          lineTo: Cypress.sinon.stub(),
+          closePath: Cypress.sinon.stub(),
+          stroke: Cypress.sinon.stub(),
+          fill: Cypress.sinon.stub(),
+          arc: Cypress.sinon.stub(),
+          drawImage: Cypress.sinon.stub(),
+          getImageData: Cypress.sinon.stub().returns({
             data: new Uint8ClampedArray(4),
             width: 1,
             height: 1
           }),
-          putImageData: cy.stub().as('putImageData')
+          putImageData: Cypress.sinon.stub()
         };
         
-        mockCanvas.getContext = cy.stub().returns(mockContext);
-        mockCanvas.toDataURL = cy.stub().returns('data:image/png;base64,mock-data');
+        mockCanvas.getContext = Cypress.sinon.stub().returns(mockContext);
+        mockCanvas.toDataURL = Cypress.sinon.stub().returns('data:image/png;base64,mock-data');
         
         return mockCanvas;
-      }
-      return originalCreateElement.call(win.document, tagName);
     });
   });
 });
@@ -219,15 +265,14 @@ Cypress.Commands.add('mockFileDownload', () => {
     const mockAnchor = {
       click: cy.stub().as('downloadClick'),
       href: '',
-      download: ''
+      download: '',
+      setAttribute: cy.stub().callsFake((name: string, value: string) => {
+        (mockAnchor as Record<string, string>)[name] = value;
+      })
     };
     
-    cy.stub(win.document, 'createElement').callsFake((tagName) => {
-      if (tagName === 'a') {
-        return mockAnchor;
-      }
-      return win.document.createElement(tagName);
-    });
+    const { handlers } = getCreateElementHandlers(win);
+    handlers.set('a', () => mockAnchor);
     
     cy.stub(win.URL, 'createObjectURL').as('createObjectURL').returns('mock-blob-url');
     cy.stub(win.URL, 'revokeObjectURL').as('revokeObjectURL');
@@ -292,7 +337,7 @@ declare global {
     interface Chainable {
       mockCameraAccess(options?: any): Chainable<Element>;
       mockCameraAccessDenied(errorMessage?: string): Chainable<Element>;
-      mockTensorFlowJS(): Chainable<Element>;
+      mockTensorFlowJS(options?: { createDetectorError?: string }): Chainable<Element>;
       mockVideoElement(): Chainable<Element>;
       mockCanvas(): Chainable<Element>;
       waitForGaitAnalysis(timeout?: number): Chainable<Element>;

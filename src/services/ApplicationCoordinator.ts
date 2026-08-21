@@ -34,6 +34,7 @@ export class ApplicationCoordinator extends EventEmitter {
   private shutdownPromise: Promise<void> | null = null;
   private heartbeatInterval: NodeJS.Timeout | null = null;
   private performanceInterval: NodeJS.Timeout | null = null;
+  private recoveryInProgress = new Set<string>();
 
   // Core Services
   private cameraService: CameraService;
@@ -126,6 +127,9 @@ export class ApplicationCoordinator extends EventEmitter {
     });
 
     this.cameraService.on('error', (error) => {
+      const permissionDenied = error?.name === 'NotAllowedError' ||
+        error?.name === 'PermissionDeniedError';
+
       this.errorHandlingService.handleError({
         id: `camera-${Date.now()}`,
         type: 'camera',
@@ -133,19 +137,8 @@ export class ApplicationCoordinator extends EventEmitter {
         message: error.message,
         details: error,
         timestamp: Date.now(),
-        recoverable: true
+        recoverable: !permissionDenied
       });
-    });
-
-    // Pose detection events
-    this.poseDetectionService.on('poseDetected', (analysis) => {
-      this.gaitAnalysisService.addPose(analysis.pose, analysis.timestamp);
-      this.eventBusService.emit('poseDetected', analysis);
-    });
-
-    // Gait analysis events
-    this.gaitAnalysisService.on('parametersUpdated', (parameters) => {
-      this.eventBusService.emit('gaitParametersUpdated', parameters);
     });
 
     // Global error handling
@@ -279,12 +272,6 @@ export class ApplicationCoordinator extends EventEmitter {
       // Start camera
       await this.cameraService.start();
       
-      // Start pose detection
-      await this.poseDetectionService.start();
-      
-      // Start gait analysis
-      await this.gaitAnalysisService.start();
-
       this.state.isRunning = true;
       this.state.currentMode = 'analysis';
       this.state.error = null;
@@ -309,10 +296,10 @@ export class ApplicationCoordinator extends EventEmitter {
         id: `start-${Date.now()}`,
         type: 'user',
         severity: 'high',
-        message: 'Failed to start application',
+        message: error instanceof Error ? error.message : 'Failed to start application',
         details: error,
         timestamp: Date.now(),
-        recoverable: true
+        recoverable: false
       });
       throw error;
     }
@@ -327,9 +314,8 @@ export class ApplicationCoordinator extends EventEmitter {
     try {
       this.loggingService.info('ApplicationCoordinator: Stopping application');
       
-      // Stop services in reverse order
-      await this.gaitAnalysisService.stop();
-      await this.poseDetectionService.stop();
+      // Stop the camera; pose detection and gait analysis are stateless
+      // processing services and do not have separate start/stop lifecycles.
       await this.cameraService.stop();
 
       this.state.isRunning = false;
@@ -427,14 +413,33 @@ export class ApplicationCoordinator extends EventEmitter {
     try {
       this.performanceMonitorService.startFrameProcessing();
       
-      // Process frame through AI pipeline
-      const analysis = await this.poseDetectionService.processFrame(frame);
+      // Process frame through the pose detection pipeline.
+      const detections = await this.poseDetectionService.detectPoses(frame.data);
+
+      // Forward detections in the shape consumed by the app and gait service.
+      detections.forEach((detection) => {
+        const analysis = {
+          pose: {
+            keypoints: detection.keypoints,
+            score: detection.confidence
+          },
+          timestamp: detection.timestamp
+        };
+
+        this.gaitAnalysisService.addPose(analysis.pose, analysis.timestamp);
+        this.eventBusService.emit('poseDetected', analysis);
+        this.emit('poseDetected', analysis);
+        this.emit(
+          'gaitParametersUpdated',
+          this.gaitAnalysisService.calculateGaitParameters()
+        );
+      });
       
       // Update performance metrics
       this.performanceMonitorService.endFrameProcessing();
       
       // Emit frame processed event
-      this.eventBusService.emit('frameProcessed', { frame, analysis });
+      this.eventBusService.emit('frameProcessed', { frame, detections });
       
     } catch (error) {
       this.loggingService.error('ApplicationCoordinator: Frame processing failed', error);
@@ -475,12 +480,15 @@ export class ApplicationCoordinator extends EventEmitter {
     }
 
     // Attempt recovery for recoverable errors
-    if (error.recoverable) {
+    if (error.recoverable && !this.recoveryInProgress.has(error.type)) {
       this.attemptRecovery(error);
     }
   }
 
   private async attemptRecovery(error: AppError): Promise<void> {
+    if (this.recoveryInProgress.has(error.type)) return;
+
+    this.recoveryInProgress.add(error.type);
     try {
       this.loggingService.info('ApplicationCoordinator: Attempting recovery', error);
       
@@ -499,6 +507,8 @@ export class ApplicationCoordinator extends EventEmitter {
       }
     } catch (recoveryError) {
       this.loggingService.error('ApplicationCoordinator: Recovery failed', recoveryError);
+    } finally {
+      this.recoveryInProgress.delete(error.type);
     }
   }
 
@@ -635,7 +645,6 @@ export class ApplicationCoordinator extends EventEmitter {
 
     // Reset all services
     await this.gaitAnalysisService.reset();
-    await this.poseDetectionService.reset();
     await this.cameraService.reset();
     this.performanceMonitorService.reset();
     this.adaptiveQualityService.reset();

@@ -61,14 +61,16 @@ export class CameraService extends EventEmitter {
     this.video.autoplay = true;
     this.video.muted = true;
     
-    return new Promise((resolve, reject) => {
-      this.video!.onloadedmetadata = () => {
+    const updateCanvasDimensions = () => {
+      if (this.video!.videoWidth > 0 && this.video!.videoHeight > 0) {
         this.canvas!.width = this.video!.videoWidth;
         this.canvas!.height = this.video!.videoHeight;
-        resolve();
-      };
-      this.video!.onerror = reject;
-    });
+      }
+    };
+
+    this.video.onloadedmetadata = updateCanvasDimensions;
+    this.video.onerror = (error) => this.emit('error', error);
+    updateCanvasDimensions();
   }
 
   private startFrameCapture(): void {
