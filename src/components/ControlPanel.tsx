@@ -51,17 +51,6 @@ export const ControlPanel: React.FC<ControlPanelProps> = ({
         </button>
 
         <button
-          className="start-analysis-button primary"
-          onClick={onStart}
-          disabled={!canStart}
-          data-testid="start-analysis-button"
-          title={canStart ? 'Start gait detection' : 'Cannot start - check system status'}
-          style={{ display: 'none' }} // Hidden duplicate for test compatibility
-        >
-          ▶️ Start Analysis
-        </button>
-
-        <button
           className="reset-button tertiary"
           onClick={onReset}
           data-testid="reset-button"
