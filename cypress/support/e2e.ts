@@ -27,37 +27,19 @@ Cypress.on('uncaught:exception', (err, runnable) => {
 
 // Global test setup
 beforeEach(() => {
+  cy.on('window:before:load', (win) => {
+    // Keep service frame capture active while avoiding an unbounded visual
+    // animation loop in headless Electron between assertions.
+    win.requestAnimationFrame = () => 0;
+    win.cancelAnimationFrame = () => undefined;
+  });
+
   // Mock performance.now() for consistent timestamps
   cy.window().then((win) => {
     let startTime = Date.now();
-    cy.stub(win.performance, 'now').callsFake(() => {
+    Cypress.sinon.stub(win.performance, 'now').callsFake(() => {
       return Date.now() - startTime;
     });
   });
 
-  // Mock requestAnimationFrame for consistent timing
-  cy.window().then((win) => {
-    let frameId = 0;
-    cy.stub(win, 'requestAnimationFrame').callsFake((callback) => {
-      return setTimeout(() => {
-        callback(Date.now());
-      }, 16);
-    });
-    
-    cy.stub(win, 'cancelAnimationFrame').callsFake((id) => {
-      clearTimeout(id);
-    });
-  });
-});
-
-// Global test cleanup
-afterEach(() => {
-  // Clean up any running timers
-  cy.window().then((win) => {
-    // Clear any remaining intervals or timeouts
-    for (let i = 1; i < 99999; i++) {
-      win.clearInterval(i);
-      win.clearTimeout(i);
-    }
-  });
 });

@@ -15,9 +15,14 @@ import {
   KeypointName
 } from '../types/pose';
 
+const getPerformanceNow = (): number => {
+  const performanceApi = typeof window !== 'undefined' ? window.performance : undefined;
+  return typeof performanceApi?.now === 'function' ? performanceApi.now() : Date.now();
+};
+
 export class PoseDetectionService implements IPoseDetectionService {
   private detector: poseDetection.PoseDetector | null = null;
-  private config: PoseDetectionConfig;
+  private config?: PoseDetectionConfig;
   private stats: PoseDetectionStats;
   private frameCount: number = 0;
   private lastFrameTime: number = 0;
@@ -37,7 +42,8 @@ export class PoseDetectionService implements IPoseDetectionService {
     frameSkipMultiplier: 1
   };
 
-  constructor() {
+  constructor(config?: PoseDetectionConfig) {
+    this.config = config;
     this.stats = {
       totalPoses: 0,
       averageConfidence: 0,
@@ -52,39 +58,49 @@ export class PoseDetectionService implements IPoseDetectionService {
   /**
    * Initialize the pose detection service for real-time human pose detection
    */
-  async initialize(config: PoseDetectionConfig): Promise<void> {
-    const startTime = performance.now();
-    
+  async initialize(config?: PoseDetectionConfig): Promise<void> {
+    const startTime = getPerformanceNow();
+    const tensorflow: any = typeof window !== 'undefined' && (window as any).tf
+      ? (window as any).tf
+      : tf;
+    const poseDetectionApi: any = typeof window !== 'undefined' && (window as any).poseDetection
+      ? (window as any).poseDetection
+      : poseDetection;
     try {
-      this.config = config;
-      this.adaptivePerformance.currentTargetFPS = config.performance.targetFPS;
+      const activeConfig = config ?? this.config;
+      if (!activeConfig) {
+        throw new Error('Pose detection configuration is required');
+      }
+
+      this.config = activeConfig;
+      this.adaptivePerformance.currentTargetFPS = activeConfig.performance.targetFPS;
       
       // Initialize TensorFlow.js with optimizations for real-time performance
-      await tf.ready();
+      await tensorflow.ready();
       
       // Set backend with fallback logic for better compatibility
-      if (config.enableGPU) {
+      if (activeConfig.enableGPU) {
         try {
-          await tf.setBackend('webgl');
+          await tensorflow.setBackend('webgl');
           // Enhanced WebGL optimizations for real-time pose detection
-          tf.ENV.set('WEBGL_PACK', true);
-          tf.ENV.set('WEBGL_FORCE_F16_TEXTURES', true);
-          tf.ENV.set('WEBGL_RENDER_FLOAT32_CAPABLE', true);
-          tf.ENV.set('WEBGL_FLUSH_THRESHOLD', -1);
+          tensorflow.ENV?.set('WEBGL_PACK', true);
+          tensorflow.ENV?.set('WEBGL_FORCE_F16_TEXTURES', true);
+          tensorflow.ENV?.set('WEBGL_RENDER_FLOAT32_CAPABLE', true);
+          tensorflow.ENV?.set('WEBGL_FLUSH_THRESHOLD', -1);
           console.log('GPU acceleration enabled for pose detection');
         } catch (gpuError) {
           console.warn('GPU initialization failed, falling back to CPU:', gpuError.message);
-          await tf.setBackend('cpu');
+          await tensorflow.setBackend('cpu');
         }
       } else {
-        await tf.setBackend('cpu');
+        await tensorflow.setBackend('cpu');
         console.log('CPU backend selected for pose detection');
       }
       
       // Create optimized pose detector
       const modelConfig = this.createModelConfig();
-      this.detector = await poseDetection.createDetector(
-        poseDetection.SupportedModels.MoveNet,
+      this.detector = await poseDetectionApi.createDetector(
+        poseDetectionApi.SupportedModels.MoveNet,
         modelConfig
       );
       
@@ -92,18 +108,19 @@ export class PoseDetectionService implements IPoseDetectionService {
       this.initializeMotionTracking();
       
       this.isInitialized = true;
-      this.stats.modelLoadTime = performance.now() - startTime;
+      this.stats.modelLoadTime = getPerformanceNow() - startTime;
       
       console.log(`Human Pose Detection Service initialized successfully:
-        - Model: MoveNet ${config.modelType}
-        - Backend: ${tf.getBackend()}
-        - Input Resolution: ${config.inputResolution.width}x${config.inputResolution.height}
-        - Max Poses: ${config.maxPoses}
+        - Model: MoveNet ${activeConfig.modelType}
+        - Backend: ${tensorflow.getBackend()}
+        - Input Resolution: ${activeConfig.inputResolution.width}x${activeConfig.inputResolution.height}
+        - Max Poses: ${activeConfig.maxPoses}
         - Load Time: ${this.stats.modelLoadTime.toFixed(2)}ms`);
         
     } catch (error) {
       this.isInitialized = false;
-      throw new Error(`Failed to initialize pose detection: ${error.message}`);
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to initialize pose detection: ${message}`);
     }
   }
 
@@ -121,7 +138,7 @@ export class PoseDetectionService implements IPoseDetectionService {
       throw new Error('Invalid input: imageData is null or undefined');
     }
 
-    const startTime = performance.now();
+    const startTime = getPerformanceNow();
     
     try {
       // Adaptive frame skipping based on performance
@@ -147,7 +164,7 @@ export class PoseDetectionService implements IPoseDetectionService {
       this.updatePoseHistory(results);
       
       // Update statistics and adaptive performance
-      const processingTime = performance.now() - startTime;
+      const processingTime = getPerformanceNow() - startTime;
       this.updateStats(results, processingTime);
       this.updateAdaptivePerformance(processingTime);
       
@@ -498,7 +515,7 @@ export class PoseDetectionService implements IPoseDetectionService {
     this.stats.avgProcessingTime = this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length;
     
     // Calculate FPS
-    const currentTime = performance.now();
+    const currentTime = getPerformanceNow();
     if (this.lastFrameTime > 0) {
       const frameDuration = currentTime - this.lastFrameTime;
       this.stats.currentFPS = 1000 / frameDuration;

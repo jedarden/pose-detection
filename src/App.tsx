@@ -416,7 +416,9 @@ function App() {
       setCanStart(false);
       setError(null);
     } catch (err) {
-      const startErrorMessage = err instanceof Error ? err.message : 'Failed to start analysis';
+      const startErrorMessage = typeof err === 'object' && err !== null && 'message' in err
+        ? String((err as { message: unknown }).message)
+        : 'Failed to start analysis';
       setError(startErrorMessage);
       logger.error('Start error', err, 'App');
     }
