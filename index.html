@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
     <!-- PWA manifest -->
@@ -61,7 +61,10 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
+          const manifestUrl = document.querySelector('link[rel="manifest"]').href;
+          const serviceWorkerUrl = new URL('sw.js', manifestUrl);
+
+          navigator.serviceWorker.register(serviceWorkerUrl.href)
             .then(registration => {
               console.log('SW registered: ', registration);
             })
