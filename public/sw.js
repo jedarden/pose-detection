@@ -1,14 +1,18 @@
 // Service Worker for Gait Detection System PWA
-// Version 1.0.0
+// Version 1.0.1
 
-const CACHE_NAME = 'gait-detection-v1.0.0';
-const RUNTIME_CACHE = 'gait-detection-runtime-v1.0.0';
+const CACHE_NAME = 'gait-detection-v1.0.1';
+const RUNTIME_CACHE = 'gait-detection-runtime-v1.0.1';
+const APP_SCOPE = self.registration.scope;
+const scopedUrl = (path = '') => new URL(path, APP_SCOPE).href;
+const OFFLINE_URL = scopedUrl('index.html');
+const APP_ICON_URL = scopedUrl('image.png');
 
 // Core app shell files to cache immediately
 const PRECACHE_URLS = [
-  '/',
-  '/index.html',
-  '/manifest.json',
+  scopedUrl(),
+  OFFLINE_URL,
+  scopedUrl('manifest.json'),
   // Assets will be added dynamically as they're discovered
 ];
 
@@ -97,7 +101,7 @@ self.addEventListener('fetch', (event) => {
   // Strategy 3: Network Only for everything else (camera streams, etc.)
   event.respondWith(fetch(event.request).catch(() => {
     // Return offline page or cached response as fallback
-    return caches.match('/index.html');
+    return caches.match(OFFLINE_URL);
   }));
 });
 
@@ -128,7 +132,7 @@ async function cacheFirst(request) {
       return cachedResponse;
     }
     // If nothing in cache, return offline page
-    return caches.match('/index.html');
+    return caches.match(OFFLINE_URL);
   }
 }
 
@@ -153,7 +157,7 @@ async function networkFirst(request, cacheName) {
       return cachedResponse;
     }
     // If nothing in cache, return offline page
-    return caches.match('/index.html');
+    return caches.match(OFFLINE_URL);
   }
 }
 
@@ -168,8 +172,8 @@ self.addEventListener('sync', (event) => {
 self.addEventListener('push', (event) => {
   const options = {
     body: event.data ? event.data.text() : 'New notification',
-    icon: '/image.png',
-    badge: '/image.png',
+    icon: APP_ICON_URL,
+    badge: APP_ICON_URL,
     vibrate: [200, 100, 200],
   };
 
