@@ -156,3 +156,9 @@ This project was created using AI assistance. Below are the prompts that were us
 ---
 
 Built with ❤️ using React, TypeScript, and TensorFlow.js
+
+---
+
+Part of [jedarden.com](https://jedarden.com) · Read the write-up: [jedarden.com/projects/gait/](https://jedarden.com/projects/gait/)
+
+*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/pose-detection — issues and PRs are welcome here either way.*
