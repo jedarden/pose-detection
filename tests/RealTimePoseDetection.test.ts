@@ -57,7 +57,13 @@ vi.mock('@tensorflow-models/pose-detection', () => ({
     estimatePoses: vi.fn().mockResolvedValue([]),
     dispose: vi.fn()
   }),
-  SupportedModels: { MoveNet: 'MoveNet' }
+  SupportedModels: { MoveNet: 'MoveNet' },
+  movenet: {
+    modelType: {
+      SINGLEPOSE_LIGHTNING: 'SINGLEPOSE_LIGHTNING',
+      SINGLEPOSE_THUNDER: 'SINGLEPOSE_THUNDER'
+    }
+  }
 }));
 
 // Mock Performance API

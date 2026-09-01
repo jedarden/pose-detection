@@ -37,6 +37,12 @@ vi.mock('@tensorflow-models/pose-detection', () => ({
   }),
   SupportedModels: {
     MoveNet: 'MoveNet'
+  },
+  movenet: {
+    modelType: {
+      SINGLEPOSE_LIGHTNING: 'SINGLEPOSE_LIGHTNING',
+      SINGLEPOSE_THUNDER: 'SINGLEPOSE_THUNDER'
+    }
   }
 }));
 

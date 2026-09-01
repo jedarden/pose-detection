@@ -19,6 +19,7 @@ import {
 vi.mock('@tensorflow/tfjs', () => ({
   ready: vi.fn().mockResolvedValue(true),
   setBackend: vi.fn().mockResolvedValue(true),
+  getBackend: vi.fn().mockReturnValue('webgl'),
   ENV: { set: vi.fn() }
 }));
 
@@ -28,7 +29,13 @@ vi.mock('@tensorflow-models/pose-detection', () => ({
     estimatePoses: vi.fn(),
     dispose: vi.fn()
   }),
-  SupportedModels: { MoveNet: 'MoveNet' }
+  SupportedModels: { MoveNet: 'MoveNet' },
+  movenet: {
+    modelType: {
+      SINGLEPOSE_LIGHTNING: 'SINGLEPOSE_LIGHTNING',
+      SINGLEPOSE_THUNDER: 'SINGLEPOSE_THUNDER'
+    }
+  }
 }));
 
 describe('Keypoint Detection - Major Body Parts', () => {
