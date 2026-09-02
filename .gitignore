@@ -35,3 +35,6 @@ coverage/
 *.tmp
 *.temp
 .cache/
+
+# NEEDLE execution traces are local diagnostics.
+**/.beads/traces/
