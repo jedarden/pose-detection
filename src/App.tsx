@@ -2,6 +2,8 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PerformanceMonitor } from './components/PerformanceMonitor';
 import { CameraSelector } from './components/CameraSelector';
+import { GaitVisualizationSystem } from './components/GaitVisualizationSystem';
+import MetricsDisplay, { MotionMetrics } from './components/MetricsDisplay';
 import { ApplicationCoordinator } from './services/ApplicationCoordinator';
 import { GaitAnalysisService, GaitParameters } from './services/GaitAnalysisService';
 import { LoggingService } from './services/LoggingService';
@@ -69,11 +71,17 @@ function App() {
   //Refs
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const visualizationCanvasRef = useRef<HTMLCanvasElement>(null);
+  const visualizationQualityRef = useRef<HTMLDivElement>(null);
+  const visualizationParametersRef = useRef<HTMLDivElement>(null);
   const coordinatorRef = useRef<ApplicationCoordinator | null>(null);
   const gaitAnalysisRef = useRef<GaitAnalysisService | null>(null);
+  const gaitVisualizationRef = useRef<GaitVisualizationSystem | null>(null);
   const runtimePerformanceRef = useRef<RuntimePerformanceManager | null>(null);
   const latestPoseRef = useRef<Pose | null>(null);
   const latestPerformanceMetricsRef = useRef<Record<string, unknown>>({});
+  const previousKeypointsRef = useRef<Pose['keypoints'] | null>(null);
+  const poseStartTimeRef = useRef<number | null>(null);
 
   // State
   const [isRunning, setIsRunning] = useState(false);
@@ -106,6 +114,16 @@ function App() {
     stanceTime: 0,
     swingTime: 0,
     doubleSupport: 0
+  });
+
+  const [motionMetrics, setMotionMetrics] = useState<MotionMetrics>({
+    detectionConfidence: 0,
+    keypointCount: 0,
+    visibleKeypoints: 0,
+    trackingQuality: 0,
+    movementIntensity: 0,
+    poseDuration: 0,
+    averageKeypointConfidence: 0
   });
 
   // Performance metrics
@@ -255,22 +273,97 @@ function App() {
     };
   }, [selectedCameraId]);
 
+  // Use the production coordinator's pose stream with the shared visualization
+  // renderers. GaitVisualizationSystem is deliberately not initialized here:
+  // camera access and pose detection are already owned by the coordinator.
+  useEffect(() => {
+    if (!isInitialized || !visualizationCanvasRef.current ||
+        !visualizationQualityRef.current || !visualizationParametersRef.current) {
+      return;
+    }
+
+    const visualizationSystem = new GaitVisualizationSystem(
+      visualizationCanvasRef.current,
+      visualizationQualityRef.current,
+      visualizationParametersRef.current
+    );
+    gaitVisualizationRef.current = visualizationSystem;
+
+    return () => {
+      visualizationSystem.dispose();
+      if (gaitVisualizationRef.current === visualizationSystem) {
+        gaitVisualizationRef.current = null;
+      }
+    };
+  }, [isInitialized]);
+
   // Handle pose detection events
   const handlePoseDetected = useCallback((analysis: any) => {
     if (analysis && analysis.pose) {
-      latestPoseRef.current = analysis.pose;
-      setCurrentPose(analysis.pose);
+      const pose = analysis.pose as Pose;
+      const timestamp = typeof analysis.timestamp === 'number' ? analysis.timestamp : Date.now();
+      const keypoints = pose.keypoints;
+      const visibleKeypoints = keypoints.filter((keypoint) => (keypoint.score ?? 0) > 0.5).length;
+      const totalConfidence = keypoints.reduce(
+        (sum, keypoint) => sum + (keypoint.score ?? 0),
+        0
+      );
+      const averageKeypointConfidence = keypoints.length > 0
+        ? totalConfidence / keypoints.length
+        : 0;
 
-      // Feed pose data to gait analysis service
-      if (gaitAnalysisRef.current) {
-        gaitAnalysisRef.current.addPose(analysis.pose, analysis.timestamp || Date.now());
+      if (poseStartTimeRef.current === null) {
+        poseStartTimeRef.current = timestamp;
       }
+      if (poseStartTimeRef.current === null) return;
+
+      let movementIntensity = 0;
+      if (previousKeypointsRef.current) {
+        const comparableKeypoints = keypoints.slice(0, previousKeypointsRef.current.length);
+        const totalDisplacement = comparableKeypoints.reduce((sum, keypoint, index) => {
+          const previousKeypoint = previousKeypointsRef.current![index];
+          const dx = keypoint.x - previousKeypoint.x;
+          const dy = keypoint.y - previousKeypoint.y;
+          return sum + Math.sqrt(dx * dx + dy * dy);
+        }, 0);
+        const averageDisplacement = comparableKeypoints.length > 0
+          ? totalDisplacement / comparableKeypoints.length
+          : 0;
+        movementIntensity = Math.min(1, averageDisplacement / 50);
+      }
+
+      const poseDuration = (timestamp - poseStartTimeRef.current) / 1000;
+      const trackingQuality = Math.max(
+        0,
+        Math.min(1, averageKeypointConfidence * (1 - movementIntensity * 0.5))
+      );
+
+      latestPoseRef.current = analysis.pose;
+      setCurrentPose(pose);
+      previousKeypointsRef.current = [...pose.keypoints];
+      setMotionMetrics({
+        detectionConfidence: pose.score ?? 0,
+        keypointCount: keypoints.length,
+        visibleKeypoints,
+        trackingQuality,
+        movementIntensity,
+        poseDuration,
+        averageKeypointConfidence
+      });
     }
   }, []);
+
+  useEffect(() => {
+    gaitVisualizationRef.current?.renderPose(
+      latestPoseRef.current,
+      showOverlays
+    );
+  }, [showOverlays]);
 
   // Handle gait parameters updates
   const handleGaitParametersUpdated = useCallback((parameters: GaitParameters) => {
     setGaitParameters(parameters);
+    gaitVisualizationRef.current?.updateAnalysisParameters(parameters);
   }, []);
 
   // Handle errors
@@ -315,6 +408,10 @@ function App() {
         frame,
         latestPoseRef.current,
         latestPerformanceMetricsRef.current,
+        false
+      );
+      gaitVisualizationRef.current?.renderPose(
+        latestPoseRef.current,
         showOverlaysRef.current
       );
     } catch (err) {
@@ -397,6 +494,18 @@ function App() {
       });
 
       setCurrentPose(null);
+      gaitVisualizationRef.current?.renderPose(null, false);
+      previousKeypointsRef.current = null;
+      poseStartTimeRef.current = null;
+      setMotionMetrics({
+        detectionConfidence: 0,
+        keypointCount: 0,
+        visibleKeypoints: 0,
+        trackingQuality: 0,
+        movementIntensity: 0,
+        poseDuration: 0,
+        averageKeypointConfidence: 0
+      });
       sessionStartTimeRef.current = null;
 
       // Clear canvas
@@ -440,6 +549,7 @@ function App() {
         parameters: gaitParameters,
         timestamp: Date.now()
       },
+      motionMetrics,
       currentPose: currentPose ? {
         keypoints: currentPose.keypoints,
         confidence: currentPose.score
@@ -497,9 +607,21 @@ function App() {
         canvasRef.current.style.left = `${offsetX}px`;
         canvasRef.current.style.top = `${offsetY}px`;
 
+        if (visualizationCanvasRef.current) {
+          visualizationCanvasRef.current.style.width = `${videoWidth * scale}px`;
+          visualizationCanvasRef.current.style.height = `${videoHeight * scale}px`;
+          visualizationCanvasRef.current.style.position = 'absolute';
+          visualizationCanvasRef.current.style.left = `${offsetX}px`;
+          visualizationCanvasRef.current.style.top = `${offsetY}px`;
+        }
+
         // Also set actual canvas dimensions
         canvasRef.current.width = videoWidth;
         canvasRef.current.height = videoHeight;
+        if (visualizationCanvasRef.current) {
+          visualizationCanvasRef.current.width = videoWidth;
+          visualizationCanvasRef.current.height = videoHeight;
+        }
       }
     };
 
@@ -601,6 +723,22 @@ function App() {
               height: 'calc(100% - 4px)'
             }}
           />
+          <canvas
+            ref={visualizationCanvasRef}
+            width="640"
+            height="480"
+            data-testid="gait-visualization-canvas"
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: '2px',
+              left: '2px',
+              zIndex: 2,
+              pointerEvents: 'none',
+              width: 'calc(100% - 4px)',
+              height: 'calc(100% - 4px)'
+            }}
+          />
         </div>
 
         <ControlPanel
@@ -616,102 +754,15 @@ function App() {
           Status: {isRunning ? 'Running' : isInitialized ? 'Ready' : 'Initializing...'}
         </div>
 
-        {/* Gait Analysis Parameters Display */}
-        <div className="gait-parameters" data-testid="gait-parameters" style={{
-          marginTop: '20px',
-          padding: '20px',
-          backgroundColor: '#f0f8ff',
-          borderRadius: '8px',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '15px'
-        }}>
-          <h3 style={{ gridColumn: '1 / -1', margin: '0 0 10px 0' }}>Real-time Gait Analysis</h3>
+        <MetricsDisplay
+          gaitParameters={gaitParameters}
+          motionMetrics={motionMetrics}
+        />
 
-          <div className="parameter-card" data-testid="gait-cadence" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Cadence</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="gait-cadence-value">
-              {gaitParameters.cadence.toFixed(1)} steps/min
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="gait-stride-length" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Stride Length</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {gaitParameters.strideLength.toFixed(2)} m
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="gait-velocity" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Velocity</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {gaitParameters.velocity.toFixed(2)} m/s
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="gait-symmetry" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Symmetry Index</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }}>
-              {gaitParameters.symmetryIndex.toFixed(1)}%
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="gait-phase-left" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Left Phase</h4>
-            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
-              {gaitParameters.gaitPhase.left}
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="gait-phase-right" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Right Phase</h4>
-            <p style={{ margin: '0', fontSize: '16px', fontWeight: 'bold' }}>
-              {gaitParameters.gaitPhase.right}
-            </p>
-          </div>
-
-          <div className="parameter-card" data-testid="pose-confidence" style={{
-            backgroundColor: 'white',
-            padding: '15px',
-            borderRadius: '4px',
-            border: '1px solid #ddd'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', color: '#333' }}>Analysis Confidence</h4>
-            <p style={{ margin: '0', fontSize: '18px', fontWeight: 'bold' }} data-testid="pose-confidence-value">
-              {(gaitParameters.confidence * 100).toFixed(1)}%
-            </p>
-          </div>
-        </div>
+        {/* GaitVisualizationSystem owns these DOM surfaces and updates them
+            from the same production pose stream as the canvas overlay. */}
+        <div ref={visualizationQualityRef} data-testid="gait-quality-container" style={{ display: 'none' }} />
+        <div ref={visualizationParametersRef} data-testid="gait-visualization-parameters" style={{ display: 'none' }} />
 
         {/* Performance Monitor */}
         <div style={{ marginTop: '20px' }}>

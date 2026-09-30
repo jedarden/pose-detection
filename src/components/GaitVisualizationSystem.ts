@@ -9,10 +9,12 @@ import { GaitTrajectoryRenderer } from './GaitTrajectoryRenderer';
 import { GaitParameterDisplay } from './GaitParameterDisplay';
 import { QualityIndicators } from './QualityIndicators';
 import { AnimationController } from './AnimationController';
+import { Pose as TensorFlowPose } from '@tensorflow-models/pose-detection';
+import { GaitParameters as ServiceGaitParameters } from '../services/GaitAnalysisService';
 
 import { 
   VisualizationSettings, 
-  Pose, 
+  Pose as VisualizationPose,
   GaitParameters, 
   QualityMetrics, 
   PerformanceMetrics,
@@ -23,8 +25,28 @@ import {
 
 // Mock pose detection for development
 interface MockPoseDetector {
-  estimatePoses(video: HTMLVideoElement): Promise<Pose[]>;
+  estimatePoses(video: HTMLVideoElement): Promise<VisualizationPose[]>;
 }
+
+const KEYPOINT_NAMES = [
+  'nose',
+  'left_eye',
+  'right_eye',
+  'left_ear',
+  'right_ear',
+  'left_shoulder',
+  'right_shoulder',
+  'left_elbow',
+  'right_elbow',
+  'left_wrist',
+  'right_wrist',
+  'left_hip',
+  'right_hip',
+  'left_knee',
+  'right_knee',
+  'left_ankle',
+  'right_ankle'
+];
 
 export class GaitVisualizationSystem {
   private canvas: HTMLCanvasElement;
@@ -174,9 +196,16 @@ export class GaitVisualizationSystem {
       
       // Wait for video to be ready
       await new Promise<void>((resolve) => {
-        this.video.addEventListener('loadedmetadata', () => {
+        if (this.video.readyState >= 1) {
           resolve();
-        });
+          return;
+        }
+
+        const handleLoadedMetadata = () => {
+          this.video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+          resolve();
+        };
+        this.video.addEventListener('loadedmetadata', handleLoadedMetadata);
       });
       
     } catch (error) {
@@ -187,14 +216,14 @@ export class GaitVisualizationSystem {
   private async initializePoseDetection(): Promise<void> {
     // Mock pose detector for development
     this.poseDetector = {
-      estimatePoses: async (video: HTMLVideoElement): Promise<Pose[]> => {
+      estimatePoses: async (video: HTMLVideoElement): Promise<VisualizationPose[]> => {
         // Generate mock pose data for demonstration
         return this.generateMockPose();
       }
     };
   }
 
-  private generateMockPose(): Pose[] {
+  private generateMockPose(): VisualizationPose[] {
     const time = Date.now();
     const oscillation = Math.sin(time * 0.005) * 20;
     const walkCycle = Math.sin(time * 0.01) * 10;
@@ -326,7 +355,85 @@ export class GaitVisualizationSystem {
     requestAnimationFrame(() => this.processFrame());
   }
 
-  private render(poses: Pose[]): void {
+  /**
+   * Render a pose supplied by the production coordinator.
+   *
+   * The standalone demo loop above is retained for consumers that use this
+   * class directly, but the production app already owns camera access and
+   * pose detection. This adapter lets that app use the same skeleton and
+   * trajectory renderers without opening a second camera or generating mock
+   * analysis data.
+   */
+  public renderPose(pose: TensorFlowPose | null, visible = true): void {
+    if (!visible || !pose) {
+      this.skeletonRenderer.clear();
+      this.trajectoryRenderer.clearTrajectories();
+      return;
+    }
+
+    const visualizationPose = this.toVisualizationPose(pose);
+    const poses = [visualizationPose];
+
+    this.trajectoryRenderer.updateTrajectory('production', poses);
+    this.skeletonRenderer.drawSkeleton(poses);
+    if (this.settings.showTrajectory) {
+      this.trajectoryRenderer.drawTrajectories();
+    }
+
+    const qualityMetrics = this.qualityIndicators.calculateQualityMetrics(poses);
+    this.qualityIndicators.updateQualityMetrics(qualityMetrics);
+    this.qualityIndicators.updatePerformanceMetrics(this.performanceMetrics);
+  }
+
+  /**
+   * Forward real service output to the legacy parameter renderer. The React
+   * metrics panel is the primary production surface, while this keeps the
+   * class's export and embedded parameter view synchronized as well.
+   */
+  public updateAnalysisParameters(parameters: ServiceGaitParameters): void {
+    const averageStepLength = (parameters.leftStepLength + parameters.rightStepLength) / 2;
+    const visualizationParameters: GaitParameters = {
+      strideTime: parameters.strideTime,
+      stepTime: parameters.strideTime / 2,
+      stanceTime: parameters.stanceTime,
+      swingTime: parameters.swingTime,
+      doubleSupport: parameters.doubleSupport / 100,
+      cadence: parameters.cadence,
+      strideLength: parameters.strideLength,
+      stepLength: averageStepLength,
+      stepWidth: parameters.stepWidth,
+      footAngle: 0,
+      velocity: parameters.velocity,
+      symmetryIndex: parameters.symmetryIndex,
+      variabilityIndex: 0,
+      confidence: parameters.confidence
+    };
+    const quality: QualityMetrics = {
+      overallQuality: parameters.confidence,
+      trackingStability: parameters.confidence,
+      keypointVisibility: parameters.confidence,
+      temporalConsistency: parameters.gaitPhase.confidence,
+      calibrationAccuracy: 1
+    };
+
+    this.parameterDisplay.updateParameters(visualizationParameters, quality);
+  }
+
+  private toVisualizationPose(pose: TensorFlowPose): VisualizationPose {
+    return {
+      keypoints: pose.keypoints.map((keypoint, index) => ({
+        x: keypoint.x,
+        y: keypoint.y,
+        z: keypoint.z,
+        score: keypoint.score ?? 0,
+        name: keypoint.name ?? KEYPOINT_NAMES[index] ?? `keypoint-${index}`
+      })),
+      score: pose.score ?? 0,
+      timestamp: Date.now()
+    };
+  }
+
+  private render(poses: VisualizationPose[]): void {
     // Clear canvas
     this.skeletonRenderer.clear();
     
@@ -345,7 +452,7 @@ export class GaitVisualizationSystem {
     }
   }
 
-  private updateGaitParameters(poses: Pose[]): void {
+  private updateGaitParameters(poses: VisualizationPose[]): void {
     if (poses.length === 0) return;
     
     // Mock gait parameters for demonstration
@@ -377,7 +484,7 @@ export class GaitVisualizationSystem {
     this.parameterDisplay.updateParameters(mockParameters, mockQuality);
   }
 
-  private updateQualityMetrics(poses: Pose[]): void {
+  private updateQualityMetrics(poses: VisualizationPose[]): void {
     const qualityMetrics = this.qualityIndicators.calculateQualityMetrics(poses);
     this.qualityIndicators.updateQualityMetrics(qualityMetrics);
     this.qualityIndicators.updatePerformanceMetrics(this.performanceMetrics);
