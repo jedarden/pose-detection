@@ -15,10 +15,11 @@
     
     <!-- Runtime configuration -->
     <script>
-      window.__BASE_PATH__ = '${BASE_PATH}';
+      const basePath = '${BASE_PATH}';
+      window.__BASE_PATH__ = basePath;
       window.__APP_CONFIG__ = {
-        basePath: '${BASE_PATH}',
-        apiUrl: '${BASE_PATH}/api'
+        basePath,
+        apiUrl: basePath === '/' ? '/api' : `${basePath}/api`
       };
     </script>
     

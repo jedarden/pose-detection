@@ -14,6 +14,12 @@ fi
 
 echo "Starting pose detection app with BASE_PATH: $BASE_PATH"
 
+# Keep the API URL rooted correctly when BASE_PATH is "/".  Concatenating
+# "/" and "/api" directly would inject "//api" into the runtime config.
+API_URL="${BASE_PATH%/}/api"
+[ -n "$API_URL" ] || API_URL=/api
+ASSET_BASE="${BASE_PATH%/}"
+
 # Copy all static files to /tmp/html (writable location)
 mkdir -p /tmp/html
 echo "Copying static files to /tmp/html..."
@@ -22,7 +28,9 @@ cp -r /app/dist/* /tmp/html/
 # Process the index.html template by injecting BASE_PATH configuration
 if [ -f /tmp/html/index.html ]; then
     # Create a temporary version with BASE_PATH configuration injected
-    sed "s|<head>|<head><script>window.__BASE_PATH__ = '${BASE_PATH}'; window.__APP_CONFIG__ = { basePath: '${BASE_PATH}', apiUrl: '${BASE_PATH}/api' };</script>|" /tmp/html/index.html > /tmp/html/index.html.new
+    sed -e "s|\./|${ASSET_BASE}/|g" \
+        -e "s|<head>|<head><script>window.__BASE_PATH__ = '${BASE_PATH}'; window.__APP_CONFIG__ = { basePath: '${BASE_PATH}', apiUrl: '${API_URL}' };</script>|" \
+        /tmp/html/index.html > /tmp/html/index.html.new
     mv /tmp/html/index.html.new /tmp/html/index.html
     echo "Injected BASE_PATH configuration into index.html"
 else

@@ -80,9 +80,15 @@ docker run -p 8080:80 -e BASE_PATH=/pose pose-detection
 The application supports runtime path configuration for flexible deployment:
 
 ```javascript
-// Automatically detects and configures base path
-const basePath = window.location.pathname.match(/^\/[^\/]+/)?.[0] || '/';
+// BASE_PATH is injected by the container at startup. The fallback supports
+// local development, where no runtime injection is present.
+const basePath = window.__BASE_PATH__ || '/';
 ```
+
+`BASE_PATH` is the configured deployment prefix, not a value inferred from the
+current URL. Use `/` for the root deployment, `/pose` for a single-segment
+deployment, or `/apps/pose-detector` for a nested deployment. The same built
+image supports all three shapes at runtime.
 
 ## 📊 Performance
 
@@ -102,6 +108,9 @@ npm run test:coverage
 
 # Run E2E tests
 npm run test:e2e
+
+# Test the production container at root, single-segment, and nested paths
+npm run test:deployment
 ```
 
 ## 🚢 Deployment

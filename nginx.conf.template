@@ -74,6 +74,7 @@ http {
     server {
         listen 8080;
         server_name _;
+        absolute_redirect off;
         root /tmp/html;
         index index.html;
 
@@ -84,14 +85,6 @@ http {
         if ($redirect_to_https) {
             return 301 https://$best_host$request_uri;
         }
-
-        # Health check endpoint
-        location ${BASE_PATH}/health {
-            access_log off;
-            return 200 '{"status":"healthy","service":"pose-detection-motion-tracking","timestamp":"$time_iso8601"}';
-            add_header Content-Type application/json;
-        }
-
 
         # API endpoints (if any)
         location /api/ {

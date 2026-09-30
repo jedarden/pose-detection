@@ -6,6 +6,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./tests/setup.ts'],
+    // The deployment test launches Docker and is run by its dedicated npm
+    // script rather than in the jsdom unit-test process.
+    include: ['tests/**/*.{test,spec}.{js,ts,tsx}'],
     pool: 'forks',
     poolOptions: {
       forks: {

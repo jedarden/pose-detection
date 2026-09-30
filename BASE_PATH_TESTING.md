@@ -14,6 +14,7 @@ Verify that the gait-detection container works correctly with different BASE_PAT
 - ✅ Nginx configuration processing
 - ✅ Runtime path injection
 - ✅ Non-privileged operation
+- ✅ Navigation from a deep SPA URL
 
 ## 📋 Test Scenarios
 
@@ -79,6 +80,20 @@ docker-compose -f docker-compose.test.yml --profile test-root up
 docker-compose -f docker-compose.test.yml --profile test-gait up
 docker-compose -f docker-compose.test.yml --profile test-app up
 ```
+
+### 4. Automated production deployment test
+
+Run the image-level test suite to verify the three supported deployment shapes
+against the built Docker image:
+
+```bash
+npm run test:deployment
+```
+
+The suite builds one image, then starts it with `BASE_PATH=/`, `/gait`, and
+`/apps/pose-detector`. Each case checks the injected runtime configuration,
+health endpoint, manifest and every local HTML asset, a deep SPA fallback URL,
+and the redirect from a base path without a trailing slash. Docker is required.
 
 ## 🔧 Manual Testing Instructions
 
