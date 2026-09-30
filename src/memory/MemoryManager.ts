@@ -44,6 +44,8 @@ class MemoryManager {
   private memoryObserver?: PerformanceObserver;
   private leakDetector: LeakDetector;
   private isMonitoring = false;
+  private monitoringInterval: ReturnType<typeof setInterval> | null = null;
+  private gcInterval: ReturnType<typeof setInterval> | null = null;
   private observers: ((stats: MemoryStats) => void)[] = [];
 
   constructor() {
@@ -229,7 +231,7 @@ class MemoryManager {
     this.isMonitoring = true;
     
     // Update stats periodically
-    setInterval(() => {
+    this.monitoringInterval = setInterval(() => {
       this.updateMemoryStats();
       this.updatePoolStats();
       this.checkForLeaks();
@@ -238,12 +240,26 @@ class MemoryManager {
     
     // Force garbage collection periodically (if available)
     if (typeof gc !== 'undefined') {
-      setInterval(() => {
+      this.gcInterval = setInterval(() => {
         performance.mark('gc-start');
         gc();
         performance.mark('gc-end');
         performance.measure('gc-duration', 'gc-start', 'gc-end');
       }, 10000);
+    }
+  }
+
+  public stopMonitoring(): void {
+    this.isMonitoring = false;
+
+    if (this.monitoringInterval) {
+      clearInterval(this.monitoringInterval);
+      this.monitoringInterval = null;
+    }
+
+    if (this.gcInterval) {
+      clearInterval(this.gcInterval);
+      this.gcInterval = null;
     }
   }
 
@@ -356,7 +372,7 @@ class MemoryManager {
   }
 
   public dispose(): void {
-    this.isMonitoring = false;
+    this.stopMonitoring();
     this.clearAllPools();
     this.pools.clear();
     this.observers = [];

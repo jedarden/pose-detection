@@ -123,6 +123,7 @@ export class ApplicationCoordinator extends EventEmitter {
 
     // Camera events
     this.cameraService.on('frameReady', (frame) => {
+      this.emit('frameReady', frame);
       this.processFrame(frame);
     });
 

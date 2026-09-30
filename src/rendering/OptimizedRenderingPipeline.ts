@@ -751,6 +751,7 @@ class OptimizedRenderingPipeline {
     this.isRendering = false;
     if (this.renderingLoop) {
       cancelAnimationFrame(this.renderingLoop);
+      this.renderingLoop = undefined;
     }
   }
 

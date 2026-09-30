@@ -116,6 +116,13 @@ export class CameraService extends EventEmitter {
     await this.start();
   }
 
+  public async applyConstraints(constraints: MediaTrackConstraints): Promise<void> {
+    const track = this.stream?.getVideoTracks()[0];
+    if (track?.applyConstraints) {
+      await track.applyConstraints(constraints);
+    }
+  }
+
   public async reset(): Promise<void> {
     await this.stop();
     this.emit('reset');

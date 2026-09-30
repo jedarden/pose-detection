@@ -40,6 +40,7 @@ class PerformanceMonitor {
   private frameCount: number;
   private droppedFrameCount: number;
   private performanceObserver?: PerformanceObserver;
+  private metricsInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(thresholds?: Partial<PerformanceThresholds>) {
     this.metrics = {
@@ -105,10 +106,19 @@ class PerformanceMonitor {
   }
 
   private startMetricsCollection(): void {
+    if (this.metricsInterval) return;
+
     // Update metrics every 100ms
-    setInterval(() => {
+    this.metricsInterval = setInterval(() => {
       this.updateMetrics();
     }, 100);
+  }
+
+  public stop(): void {
+    if (this.metricsInterval) {
+      clearInterval(this.metricsInterval);
+      this.metricsInterval = null;
+    }
   }
 
   public recordFrame(frameMetrics: Partial<FrameMetrics>): void {
@@ -319,6 +329,7 @@ class PerformanceMonitor {
   }
 
   public dispose(): void {
+    this.stop();
     if (this.performanceObserver) {
       this.performanceObserver.disconnect();
     }

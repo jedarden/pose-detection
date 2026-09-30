@@ -16,6 +16,7 @@ import {
 vi.mock('@tensorflow/tfjs', () => ({
   ready: vi.fn().mockResolvedValue(true),
   setBackend: vi.fn().mockResolvedValue(true),
+  getBackend: vi.fn().mockReturnValue('cpu'),
   ENV: {
     set: vi.fn()
   }
@@ -240,8 +241,12 @@ describe('PoseDetectionService', () => {
     it('should dispose of resources properly', async () => {
       await service.initialize(mockConfig);
       expect(service.isReady()).toBe(true);
+
+      const { createDetector } = await import('@tensorflow-models/pose-detection');
+      const detector = await vi.mocked(createDetector).mock.results[0].value;
       
       service.dispose();
+      expect(detector.dispose).toHaveBeenCalledTimes(1);
       expect(service.isReady()).toBe(false);
     });
 

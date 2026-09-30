@@ -1,10 +1,14 @@
-import React, { useRef, useEffect, useState, useCallback } from 'react';
+import { useRef, useEffect, useState, useCallback } from 'react';
 import { ControlPanel } from './components/ControlPanel';
 import { PerformanceMonitor } from './components/PerformanceMonitor';
 import { CameraSelector } from './components/CameraSelector';
 import { ApplicationCoordinator } from './services/ApplicationCoordinator';
 import { GaitAnalysisService, GaitParameters } from './services/GaitAnalysisService';
 import { LoggingService } from './services/LoggingService';
+import {
+  RuntimePerformanceManager,
+  RuntimeVideoFrame
+} from './performance/RuntimePerformanceManager';
 import { Pose } from '@tensorflow-models/pose-detection';
 import './App.css';
 
@@ -67,6 +71,9 @@ function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const coordinatorRef = useRef<ApplicationCoordinator | null>(null);
   const gaitAnalysisRef = useRef<GaitAnalysisService | null>(null);
+  const runtimePerformanceRef = useRef<RuntimePerformanceManager | null>(null);
+  const latestPoseRef = useRef<Pose | null>(null);
+  const latestPerformanceMetricsRef = useRef<Record<string, unknown>>({});
 
   // State
   const [isRunning, setIsRunning] = useState(false);
@@ -75,6 +82,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [selectedCameraId, setSelectedCameraId] = useState<string | undefined>(undefined);
   const [showOverlays, setShowOverlays] = useState(true);
+  const showOverlaysRef = useRef(showOverlays);
 
   // Tracking data
   const [currentPose, setCurrentPose] = useState<Pose | null>(null);
@@ -114,10 +122,13 @@ function App() {
 
   // Session tracking
   const sessionStartTimeRef = useRef<number | null>(null);
-  const animationFrameRef = useRef<number | null>(null);
 
   // Initialize coordinator and services
   useEffect(() => {
+    let cancelled = false;
+    let coordinator: ApplicationCoordinator | null = null;
+    let runtimeManager: RuntimePerformanceManager | null = null;
+
     const initializeCoordinator = async () => {
       try {
         logger.info('Initializing ApplicationCoordinator...', undefined, 'App');
@@ -166,8 +177,32 @@ function App() {
           config.camera.deviceId = selectedCameraId;
         }
 
-        const coordinator = new ApplicationCoordinator(config);
+        coordinator = new ApplicationCoordinator(config);
         coordinatorRef.current = coordinator;
+
+        const configuredRuntimeManager = canvasRef.current
+          ? new RuntimePerformanceManager(canvasRef.current, {
+              targetFPS: config.performance.frameRate,
+              enableGPUAcceleration: config.performance.enableGPUAcceleration,
+              onQualityChange: (profile) => {
+                const cameraService = coordinator!.getService<{
+                  applyConstraints?: (constraints: MediaTrackConstraints) => Promise<void>;
+                }>('camera');
+                const update = cameraService?.applyConstraints?.({
+                  width: { ideal: profile.videoResolution.width },
+                  height: { ideal: profile.videoResolution.height },
+                  frameRate: { ideal: profile.frameRate }
+                });
+                update?.catch((error) => {
+                  logger.warn('Unable to apply adaptive camera constraints', error, 'App');
+                });
+              }
+            })
+          : null;
+
+        runtimeManager = configuredRuntimeManager;
+        runtimePerformanceRef.current = runtimeManager;
+        runtimeManager?.subscribe(handleRuntimePerformanceUpdated);
 
         // Get references to services
         const gaitService = coordinator.getService<GaitAnalysisService>('gaitAnalysis');
@@ -180,17 +215,27 @@ function App() {
         coordinator.on('gaitParametersUpdated', handleGaitParametersUpdated);
         coordinator.on('error', handleError);
         coordinator.on('performanceUpdated', handlePerformanceUpdated);
-        coordinator.on('started', () => setIsRunning(true));
-        coordinator.on('stopped', () => setIsRunning(false));
+        coordinator.on('frameReady', processFrame);
+        coordinator.on('started', () => {
+          runtimeManager?.start();
+          setIsRunning(true);
+        });
+        coordinator.on('stopped', () => {
+          runtimeManager?.stop();
+          setIsRunning(false);
+        });
 
         // Initialize coordinator
         await coordinator.initialize();
+
+        if (cancelled) return;
 
         setIsInitialized(true);
         setCanStart(true);
         logger.info('ApplicationCoordinator initialized successfully', undefined, 'App');
 
       } catch (err) {
+        if (cancelled) return;
         const errorMessage = err instanceof Error ? err.message : 'Failed to initialize coordinator';
         setError(errorMessage);
         logger.error('Coordinator initialization error', err, 'App');
@@ -201,16 +246,19 @@ function App() {
 
     return () => {
       // Cleanup
-      if (coordinatorRef.current) {
-        coordinatorRef.current.removeAllListeners();
-        coordinatorRef.current.shutdown().catch((err) => logger.error('Coordinator cleanup error', err, 'App'));
-      }
+      cancelled = true;
+      runtimeManager?.dispose();
+      coordinator?.removeAllListeners();
+      coordinator?.shutdown().catch((err) => logger.error('Coordinator cleanup error', err, 'App'));
+      if (coordinatorRef.current === coordinator) coordinatorRef.current = null;
+      if (runtimePerformanceRef.current === runtimeManager) runtimePerformanceRef.current = null;
     };
   }, [selectedCameraId]);
 
   // Handle pose detection events
   const handlePoseDetected = useCallback((analysis: any) => {
     if (analysis && analysis.pose) {
+      latestPoseRef.current = analysis.pose;
       setCurrentPose(analysis.pose);
 
       // Feed pose data to gait analysis service
@@ -233,6 +281,7 @@ function App() {
 
   // Handle performance updates
   const handlePerformanceUpdated = useCallback((metrics: any) => {
+    latestPerformanceMetricsRef.current = metrics;
     setPerformanceMetrics({
       frameRate: metrics.frameRate || 0,
       averageProcessingTime: metrics.averageProcessingTime || 0,
@@ -245,162 +294,36 @@ function App() {
     });
   }, []);
 
-  // Manual frame processing for canvas rendering
-  const processFrame = useCallback(async () => {
-    if (!isRunning || !videoRef.current || !canvasRef.current || !coordinatorRef.current) {
-      return;
-    }
+  const handleRuntimePerformanceUpdated = useCallback((metrics: any) => {
+    latestPerformanceMetricsRef.current = metrics;
+    setPerformanceMetrics((previous) => ({
+      ...previous,
+      frameRate: metrics.frameRate,
+      averageProcessingTime: metrics.averageProcessingTime,
+      memoryUsage: metrics.memoryUsage,
+      droppedFrames: metrics.droppedFrames,
+      processingLatency: metrics.processingLatency,
+      modelInferenceTime: metrics.modelInferenceTime,
+      renderingTime: metrics.renderingTime,
+      overallHealth: metrics.overallHealth
+    }));
+  }, []);
 
+  const processFrame = useCallback((frame: RuntimeVideoFrame) => {
     try {
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw LIVE indicator
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
-      ctx.fillRect(canvas.width - 50, 5, 40, 20);
-      ctx.fillStyle = 'white';
-      ctx.font = '12px Arial';
-      ctx.fillText('LIVE', canvas.width - 45, 18);
-
-      // Draw current pose if available
-      if (currentPose) {
-        drawPoseSkeleton(ctx, currentPose);
-
-        // Draw gait parameters overlay if enabled
-        if (showOverlays) {
-          drawGaitParametersOverlay(ctx, gaitParameters);
-        }
-      } else {
-        // No pose detected message
-        if (showOverlays) {
-          ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
-          ctx.fillRect(10, 10, 200, 60);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = '12px Arial';
-          ctx.fillText('No person detected', 20, 30);
-          ctx.fillText('Move into camera view', 20, 50);
-        }
-      }
-
-      // Draw performance overlay if enabled
-      if (showOverlays) {
-        drawPerformanceOverlay(ctx, performanceMetrics, canvas.width);
-      }
-
+      runtimePerformanceRef.current?.renderFrame(
+        frame,
+        latestPoseRef.current,
+        latestPerformanceMetricsRef.current,
+        showOverlaysRef.current
+      );
     } catch (err) {
       const frameErrorMessage = err instanceof Error ? err.message : 'Unknown processing error';
       logger.error('Frame processing error', { message: frameErrorMessage, error: err }, 'App');
     }
+  }, []);
 
-    // Continue animation loop
-    if (isRunning) {
-      animationFrameRef.current = requestAnimationFrame(processFrame);
-    }
-  }, [isRunning, currentPose, gaitParameters, performanceMetrics, showOverlays]);
-
-  // Draw pose skeleton on canvas
-  const drawPoseSkeleton = (ctx: CanvasRenderingContext2D, pose: Pose) => {
-    const { keypoints } = pose;
-
-    // Draw skeleton connections
-    const connections = [
-      [5, 6], [5, 7], [7, 9], [6, 8], [8, 10], // Arms
-      [5, 11], [6, 12], [11, 12], // Torso
-      [11, 13], [13, 15], [12, 14], [14, 16] // Legs
-    ];
-
-    ctx.strokeStyle = '#00ff00';
-    ctx.fillStyle = '#ff0000';
-    ctx.lineWidth = 2;
-
-    connections.forEach(([from, to]) => {
-      if (keypoints[from] && keypoints[to] &&
-          keypoints[from].score > 0.3 && keypoints[to].score > 0.3) {
-        ctx.beginPath();
-        ctx.moveTo(keypoints[from].x, keypoints[from].y);
-        ctx.lineTo(keypoints[to].x, keypoints[to].y);
-        ctx.stroke();
-      }
-    });
-
-    // Draw keypoints with confidence-based colors
-    keypoints.forEach((kp, idx) => {
-      if (kp.score > 0.3) {
-        if (kp.score > 0.7) {
-          ctx.fillStyle = '#00ff00'; // Green for high confidence
-        } else if (kp.score > 0.5) {
-          ctx.fillStyle = '#ffff00'; // Yellow for medium confidence
-        } else {
-          ctx.fillStyle = '#ff8800'; // Orange for lower confidence
-        }
-
-        ctx.beginPath();
-        ctx.arc(kp.x, kp.y, 4 + (kp.score * 2), 0, 2 * Math.PI);
-        ctx.fill();
-
-        // Highlight critical keypoints
-        if (idx === 0 || idx === 5 || idx === 6 || idx === 11 || idx === 12) {
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.arc(kp.x, kp.y, 8, 0, 2 * Math.PI);
-          ctx.stroke();
-        }
-      }
-    });
-  };
-
-  // Draw gait parameters overlay
-  const drawGaitParametersOverlay = (ctx: CanvasRenderingContext2D, params: GaitParameters) => {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(10, 10, 280, 180);
-
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '12px Arial';
-
-    let y = 30;
-    const lineHeight = 18;
-
-    ctx.fillText('Gait Analysis Parameters', 20, y);
-    y += lineHeight + 5;
-
-    ctx.fillText(`Cadence: ${params.cadence.toFixed(1)} steps/min`, 20, y); y += lineHeight;
-    ctx.fillText(`Stride Length: ${params.strideLength.toFixed(2)} m`, 20, y); y += lineHeight;
-    ctx.fillText(`Velocity: ${params.velocity.toFixed(2)} m/s`, 20, y); y += lineHeight;
-    ctx.fillText(`Symmetry Index: ${params.symmetryIndex.toFixed(1)}%`, 20, y); y += lineHeight;
-    ctx.fillText(`Left Phase: ${params.gaitPhase.left}`, 20, y); y += lineHeight;
-    ctx.fillText(`Right Phase: ${params.gaitPhase.right}`, 20, y); y += lineHeight;
-    ctx.fillText(`Confidence: ${(params.confidence * 100).toFixed(1)}%`, 20, y);
-  };
-
-  // Draw performance overlay
-  const drawPerformanceOverlay = (ctx: CanvasRenderingContext2D, metrics: any, canvasWidth: number) => {
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-    ctx.fillRect(canvasWidth - 220, 10, 210, 80);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '10px Arial';
-    ctx.fillText(`FPS: ${metrics.frameRate.toFixed(1)}`, canvasWidth - 210, 25);
-    ctx.fillText(`Processing: ${metrics.averageProcessingTime.toFixed(1)}ms`, canvasWidth - 210, 40);
-    ctx.fillText(`Memory: ${metrics.memoryUsage.toFixed(1)}MB`, canvasWidth - 210, 55);
-    ctx.fillText(`Health: ${metrics.overallHealth}`, canvasWidth - 210, 70);
-  };
-
-  // Start frame processing loop when running
-  useEffect(() => {
-    if (isRunning) {
-      animationFrameRef.current = requestAnimationFrame(processFrame);
-    }
-
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }, [isRunning, processFrame]);
+  showOverlaysRef.current = showOverlays;
 
   // Handle start button
   const handleStart = async () => {

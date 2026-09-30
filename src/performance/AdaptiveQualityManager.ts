@@ -44,6 +44,10 @@ class AdaptiveQualityManager {
   private lastAdaptationTime: number;
   private adaptationHistory: { timestamp: number; profile: string; reason: string }[];
   private observers: ((profile: QualityProfile) => void)[];
+  private unsubscribePerformance?: () => void;
+  private battery?: any;
+  private batteryUpdateHandler?: () => void;
+  private isDisposed = false;
 
   constructor(performanceMonitor: PerformanceMonitor) {
     this.performanceMonitor = performanceMonitor;
@@ -178,7 +182,7 @@ class AdaptiveQualityManager {
 
   private startAdaptationLoop(): void {
     // Subscribe to performance metrics
-    this.performanceMonitor.subscribe((metrics) => {
+    this.unsubscribePerformance = this.performanceMonitor.subscribe((metrics) => {
       this.adaptQuality(metrics);
     });
   }
@@ -187,15 +191,18 @@ class AdaptiveQualityManager {
     if ('getBattery' in navigator) {
       try {
         const battery = await (navigator as any).getBattery();
+        if (this.isDisposed) return;
         
         const updateBatteryInfo = () => {
+          if (this.isDisposed) return;
           this.deviceCapabilities.batteryLevel = battery.level * 100;
           this.deviceCapabilities.isCharging = battery.charging;
           this.adaptForBatteryStatus();
         };
         
         updateBatteryInfo();
-        
+        this.battery = battery;
+        this.batteryUpdateHandler = updateBatteryInfo;
         battery.addEventListener('levelchange', updateBatteryInfo);
         battery.addEventListener('chargingchange', updateBatteryInfo);
       } catch (error) {
@@ -413,6 +420,19 @@ class AdaptiveQualityManager {
   }
 
   public dispose(): void {
+    this.isDisposed = true;
+    this.unsubscribePerformance?.();
+    this.unsubscribePerformance = undefined;
+
+    if (this.battery) {
+      if (this.batteryUpdateHandler) {
+        this.battery.removeEventListener('levelchange', this.batteryUpdateHandler);
+        this.battery.removeEventListener('chargingchange', this.batteryUpdateHandler);
+      }
+      this.battery = undefined;
+      this.batteryUpdateHandler = undefined;
+    }
+
     this.observers = [];
     this.adaptationHistory = [];
   }
