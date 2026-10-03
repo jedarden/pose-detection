@@ -14,7 +14,7 @@
     "test:watch": "vitest --watch",
     "test:e2e": "cypress run",
     "test:e2e:open": "cypress open",
-    "test:deployment": "node --test scripts/base-path-deployment.test.mjs scripts/container-proxy-smoke.test.mjs",
+    "test:deployment": "node --test scripts/base-path-deployment.test.mjs scripts/container-proxy-smoke.test.mjs scripts/definition-of-done-contract.test.mjs",
     "bench:browser": "node scripts/browser-benchmark.mjs"
   },
   "dependencies": {
