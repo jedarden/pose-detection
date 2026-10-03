@@ -44,11 +44,11 @@ Visit http://localhost:5173 to see the application.
 # Build the container
 docker build -t pose-detection .
 
-# Run with default settings (root path)
-docker run -p 8080:80 pose-detection
+# Run with default settings (root path); the container listens on 8080
+docker run -p 8080:8080 pose-detection
 
-# Run with custom base path
-docker run -p 8080:80 -e BASE_PATH=/pose pose-detection
+# Run with custom base path (runtime setting, same image)
+docker run -p 8080:8080 -e BASE_PATH=/pose pose-detection
 ```
 
 ## 🏗️ Architecture
@@ -89,8 +89,9 @@ The application supports runtime path configuration for flexible deployment:
 const basePath = window.__BASE_PATH__ || '/';
 ```
 
-`BASE_PATH` is the configured deployment prefix, not a value inferred from the
-current URL. Use `/` for the root deployment, `/pose` for a single-segment
+`BASE_PATH` is a runtime setting only. There is no build-time path setting, and
+`PUBLIC_URL` is not used. `BASE_PATH` is the configured deployment prefix, not a
+value inferred from the current URL. Use `/` for the root deployment, `/pose` for a single-segment
 deployment, or `/apps/pose-detector` for a nested deployment. The same built
 image supports all three shapes at runtime.
 
@@ -160,7 +161,7 @@ services:
   pose-detection:
     image: pose-detection:latest
     ports:
-      - "8080:80"
+      - "8080:8080"
     environment:
       - BASE_PATH=/pose
 ```

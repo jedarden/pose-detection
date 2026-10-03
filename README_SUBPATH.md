@@ -8,6 +8,14 @@ The application uses a **single environment variable** configured at runtime:
 
 - `BASE_PATH` - The URL path where the app will be served (default: `/`)
 
+### Configuration contract
+
+Subpath routing is **runtime-only**. There is no build-time path setting:
+
+- The Vite build uses `base: './'`, so the bundle contains only relative asset URLs and is identical for every path.
+- `BASE_PATH` is read by the container entrypoint at startup. It rewrites the asset references in `index.html`, injects `window.__BASE_PATH__` and `window.__APP_CONFIG__`, and generates the nginx routes.
+- `PUBLIC_URL` is not read by the build, the container, or the app. Setting it has no effect. Use `BASE_PATH` alone.
+
 ## Key Features
 
 ✅ **Single container image** - Build once, deploy anywhere  
@@ -126,7 +134,7 @@ spec:
 ## Notes
 
 1. The subpath must start with `/` and should not end with `/`
-2. Both `PUBLIC_URL` (build-time) and `BASE_PATH` (runtime) must match
+2. Set `BASE_PATH` on the running container only. Do not rebuild the image for a different path, and do not set `PUBLIC_URL`; it is not used.
 3. All assets and API calls will be relative to the configured subpath
 4. The health check endpoint is served at `${BASE_PATH}/health` (for example `/gait-detection/health`). When `BASE_PATH` is set, `/health` at the container root is not served.
 5. The container listens on port 8080. Ingress and proxy rules must forward the full `BASE_PATH` prefix unchanged; stripping it (for example with `rewrite-target` or a Traefik `stripPrefix` middleware) makes every request return 404.
