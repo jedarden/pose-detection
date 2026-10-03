@@ -22,6 +22,7 @@ test('definition-of-done is executable and bootstraps npm dependencies before ch
 
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
   const fakeNpm = join(temporaryDirectory, 'npm');
+  const fakeNode = join(temporaryDirectory, 'node');
   const invocationLog = join(temporaryDirectory, 'npm-invocations.log');
 
   try {
@@ -31,6 +32,12 @@ test('definition-of-done is executable and bootstraps npm dependencies before ch
       { mode: 0o755 },
     );
     chmodSync(fakeNpm, 0o755);
+    writeFileSync(
+      fakeNode,
+      '#!/bin/sh\nprintf \'18\\n\'\n',
+      { mode: 0o755 },
+    );
+    chmodSync(fakeNode, 0o755);
 
     const result = spawnSync(verifierPath, ['--fast'], {
       cwd: repositoryRoot,
@@ -53,6 +60,75 @@ test('definition-of-done is executable and bootstraps npm dependencies before ch
       'run lint',
       'run test:deployment',
     ]);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('definition-of-done reports the missing Node.js prerequisite', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
+  const fakeNpm = join(temporaryDirectory, 'npm');
+  const invocationLog = join(temporaryDirectory, 'npm-invocations.log');
+
+  try {
+    writeFileSync(
+      fakeNpm,
+      '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$VERIFIER_INVOCATION_LOG"\n',
+      { mode: 0o755 },
+    );
+    chmodSync(fakeNpm, 0o755);
+
+    const result = spawnSync(verifierPath, ['--fast'], {
+      cwd: temporaryDirectory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: temporaryDirectory,
+        VERIFIER_INVOCATION_LOG: invocationLog,
+      },
+    });
+
+    assert.equal(result.status, 127);
+    assert.match(result.stderr, /Node\.js 18\+ is required/);
+    assert.equal(statSync(invocationLog, { throwIfNoEntry: false }), undefined);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
+test('definition-of-done rejects an unsupported Node.js version before npm checks', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
+  const fakeNpm = join(temporaryDirectory, 'npm');
+  const fakeNode = join(temporaryDirectory, 'node');
+  const invocationLog = join(temporaryDirectory, 'npm-invocations.log');
+
+  try {
+    writeFileSync(
+      fakeNpm,
+      '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$VERIFIER_INVOCATION_LOG"\n',
+      { mode: 0o755 },
+    );
+    chmodSync(fakeNpm, 0o755);
+    writeFileSync(
+      fakeNode,
+      '#!/bin/sh\nprintf \'16\\n\'\n',
+      { mode: 0o755 },
+    );
+    chmodSync(fakeNode, 0o755);
+
+    const result = spawnSync(verifierPath, ['--fast'], {
+      cwd: temporaryDirectory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: temporaryDirectory,
+        VERIFIER_INVOCATION_LOG: invocationLog,
+      },
+    });
+
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Node\.js 18\+ is required \(found major version 16\)/);
+    assert.equal(statSync(invocationLog, { throwIfNoEntry: false }), undefined);
   } finally {
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
