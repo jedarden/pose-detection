@@ -58,6 +58,46 @@ test('definition-of-done is executable and bootstraps npm dependencies before ch
   }
 });
 
+test('definition-of-done anchors npm checks at the repository root', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
+  const fakeNpm = join(temporaryDirectory, 'npm');
+  const invocationLog = join(temporaryDirectory, 'npm-invocations.log');
+  const expectedWorkingDirectory = repositoryRoot.replace(/\/$/, '');
+
+  try {
+    writeFileSync(
+      fakeNpm,
+      '#!/bin/sh\nprintf \'%s\\t%s\\n\' "$PWD" "$*" >> "$VERIFIER_INVOCATION_LOG"\n',
+      { mode: 0o755 },
+    );
+    chmodSync(fakeNpm, 0o755);
+
+    const result = spawnSync(verifierPath, ['--fast'], {
+      cwd: temporaryDirectory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: `${temporaryDirectory}:${process.env.PATH ?? ''}`,
+        VERIFIER_INVOCATION_LOG: invocationLog,
+      },
+    });
+
+    assert.equal(
+      result.status,
+      0,
+      `temporary-directory --fast invocation failed: ${result.error?.message ?? result.stderr}`,
+    );
+    assert.deepEqual(readFileSync(invocationLog, 'utf8').trim().split('\n'), [
+      `${expectedWorkingDirectory}\tci --ignore-scripts`,
+      `${expectedWorkingDirectory}\trun build`,
+      `${expectedWorkingDirectory}\trun lint`,
+      `${expectedWorkingDirectory}\trun test:deployment`,
+    ]);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
+
 test('definition-of-done reports the missing npm prerequisite', () => {
   const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
 
