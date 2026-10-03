@@ -52,9 +52,19 @@ export class CameraService extends EventEmitter {
     this.emit('stopped');
   }
 
+  // Accepts either full MediaStreamConstraints under `defaultConstraints`, or the
+  // flat CameraConstraints (width/height/frameRate/...) that App passes. Without
+  // the flat branch getUserMedia(undefined) rejects and the camera never starts.
+  private buildMediaConstraints(): MediaStreamConstraints {
+    if (this.config.defaultConstraints) {
+      return this.config.defaultConstraints;
+    }
+    const { width, height, frameRate, facingMode, deviceId } = this.config;
+    return { audio: false, video: { width, height, frameRate, facingMode, deviceId } };
+  }
+
   private async initializeCamera(): Promise<void> {
-    const constraints = this.config.defaultConstraints;
-    this.stream = await navigator.mediaDevices.getUserMedia(constraints);
+    this.stream = await navigator.mediaDevices.getUserMedia(this.buildMediaConstraints());
     
     this.video = document.createElement('video');
     this.video.srcObject = this.stream;

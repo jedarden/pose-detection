@@ -101,6 +101,31 @@ image supports all three shapes at runtime.
 - WebGL acceleration for TensorFlow.js
 - Efficient canvas rendering
 
+### Browser performance benchmark
+
+```bash
+npm run bench:browser
+```
+
+Builds the production bundle, serves it, starts analysis with a fake camera in
+headless Chromium, and reports render FPS, detection FPS, dropped frames and
+detection latency as JSON. Render FPS and detection FPS must both reach
+`BENCH_MIN_FPS` (default `60`, the target above) or the run exits `1`. Exit `2`
+means the run could not complete (for example, no browser), so no verdict was
+produced.
+
+Environment variables:
+
+- `BENCH_CHROME`: Chromium executable. Defaults to Playwright's cached build;
+  set this when that build cannot start on the host.
+- `BENCH_URL`: measure an already-running app instead of building one.
+- `BENCH_MIN_FPS`, `BENCH_WARMUP_MS`, `BENCH_DURATION_MS`, `BENCH_PORT`: see
+  `scripts/browser-benchmark.mjs`.
+
+Results depend heavily on hardware. Headless Chromium without a GPU uses
+software WebGL, so numbers from such a host are not representative of users'
+machines. The benchmark is not part of the default verification gate.
+
 ## 🧪 Testing
 
 ```bash

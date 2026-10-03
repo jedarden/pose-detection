@@ -20,6 +20,15 @@ const getPerformanceNow = (): number => {
   return typeof performanceApi?.now === 'function' ? performanceApi.now() : Date.now();
 };
 
+// Broadcasts each detectPoses() call so browser benchmarks can read latency and
+// skipped-frame counts without reaching into service internals. Events are not
+// buffered, so long sessions do not accumulate memory.
+const emitDetectionTiming = (latencyMs: number, skipped: boolean): void => {
+  if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('pose-detection', { detail: { latencyMs, skipped } }));
+  }
+};
+
 export class PoseDetectionService implements IPoseDetectionService {
   private detector: poseDetection.PoseDetector | null = null;
   private config?: PoseDetectionConfig;
@@ -144,6 +153,7 @@ export class PoseDetectionService implements IPoseDetectionService {
       // Adaptive frame skipping based on performance
       if (this.shouldSkipFrameAdaptive()) {
         this.stats.droppedFrames++;
+        emitDetectionTiming(getPerformanceNow() - startTime, true);
         return this.getLastValidPoses();
       }
 
@@ -167,7 +177,8 @@ export class PoseDetectionService implements IPoseDetectionService {
       const processingTime = getPerformanceNow() - startTime;
       this.updateStats(results, processingTime);
       this.updateAdaptivePerformance(processingTime);
-      
+      emitDetectionTiming(processingTime, false);
+
       return results;
     } catch (error) {
       console.error('Pose detection failed:', error);

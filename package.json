@@ -14,7 +14,8 @@
     "test:watch": "vitest --watch",
     "test:e2e": "cypress run",
     "test:e2e:open": "cypress open",
-    "test:deployment": "node --test scripts/base-path-deployment.test.mjs scripts/container-proxy-smoke.test.mjs"
+    "test:deployment": "node --test scripts/base-path-deployment.test.mjs scripts/container-proxy-smoke.test.mjs",
+    "bench:browser": "node scripts/browser-benchmark.mjs"
   },
   "dependencies": {
     "@tensorflow-models/pose-detection": "^2.1.3",
@@ -41,6 +42,7 @@
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.5",
     "jsdom": "^23.0.0",
+    "playwright-core": "^1.58.0",
     "typescript": "^5.2.2",
     "vite": "^5.0.8",
     "vitest": "^1.1.0",
