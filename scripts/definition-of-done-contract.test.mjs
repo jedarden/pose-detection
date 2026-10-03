@@ -57,3 +57,23 @@ test('definition-of-done is executable and bootstraps npm dependencies before ch
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+test('definition-of-done reports the missing npm prerequisite', () => {
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), 'pose-detection-verifier-'));
+
+  try {
+    const result = spawnSync(verifierPath, ['--fast'], {
+      cwd: temporaryDirectory,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        PATH: temporaryDirectory,
+      },
+    });
+
+    assert.equal(result.status, 127);
+    assert.match(result.stderr, /npm is required/);
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
+});
