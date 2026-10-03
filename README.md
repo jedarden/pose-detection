@@ -73,7 +73,11 @@ docker run -p 8080:80 -e BASE_PATH=/pose pose-detection
 ### Environment Variables
 
 - `BASE_PATH`: URL base path for deployment (default: `/`)
-- `VITE_API_URL`: Backend API endpoint (optional)
+
+There is no backend API endpoint variable. The application is fully
+client-side: webcam capture, pose detection (TensorFlow.js), motion tracking,
+and rendering all run in the browser, and the app does not call an application
+backend. Nothing in the build reads `VITE_API_URL`.
 
 ### Runtime Configuration
 
