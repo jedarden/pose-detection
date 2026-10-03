@@ -17,7 +17,8 @@ spec:
       - name: gait-detection
         image: gait-detection:latest
         ports:
-        - containerPort: 80
+        # nginx inside the image listens on 8080
+        - containerPort: 8080
         env:
         # Configure the base path at runtime
         - name: BASE_PATH
@@ -29,16 +30,18 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+        # The app serves its health endpoint at ${BASE_PATH}/health.
+        # Update these paths if BASE_PATH changes.
         livenessProbe:
           httpGet:
-            path: /health
-            port: 80
+            path: /gait-detection/health
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 30
         readinessProbe:
           httpGet:
-            path: /health
-            port: 80
+            path: /gait-detection/health
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 10
 
@@ -53,27 +56,24 @@ spec:
     app: gait-detection
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: 8080
     protocol: TCP
 
 ---
+# The app expects the full ${BASE_PATH} prefix on every request, so the
+# ingresses below must forward the path unchanged (no rewrite or prefix strip).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: gait-detection
   namespace: default
-  annotations:
-    # nginx ingress annotations
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      rewrite ^(/gait-detection)$ $1/ redirect;
 spec:
   ingressClassName: nginx
   rules:
   - host: example.com  # Change to your domain
     http:
       paths:
-      - path: /gait-detection(/|$)(.*)
+      - path: /gait-detection
         pathType: Prefix
         backend:
           service:
@@ -88,8 +88,6 @@ kind: Ingress
 metadata:
   name: gait-detection-traefik
   namespace: default
-  annotations:
-    traefik.ingress.kubernetes.io/router.middlewares: default-gait-detection-stripprefix@kubernetescrd
 spec:
   ingressClassName: traefik
   rules:
@@ -103,16 +101,3 @@ spec:
             name: gait-detection
             port:
               number: 80
-
----
-# Traefik middleware for stripping prefix
-apiVersion: traefik.containo.us/v1alpha1
-kind: Middleware
-metadata:
-  name: gait-detection-stripprefix
-  namespace: default
-spec:
-  stripPrefix:
-    prefixes:
-    - /gait-detection
-    forceSlash: false

@@ -26,19 +26,19 @@ docker build -t gait-detection .
 
 **Root path (default):**
 ```bash
-docker run -p 8080:80 gait-detection
+docker run -p 8080:8080 gait-detection
 ```
 Access at: `http://localhost:8080/`
 
 **Subpath deployment:**
 ```bash
-docker run -p 8080:80 -e BASE_PATH=/gait-detection gait-detection
+docker run -p 8080:8080 -e BASE_PATH=/gait-detection gait-detection
 ```
 Access at: `http://localhost:8080/gait-detection`
 
 **Nested subpath:**
 ```bash
-docker run -p 8080:80 -e BASE_PATH=/apps/pose-detector gait-detection
+docker run -p 8080:8080 -e BASE_PATH=/apps/pose-detector gait-detection
 ```
 Access at: `http://localhost:8080/apps/pose-detector`
 
@@ -95,7 +95,7 @@ When using a reverse proxy (like nginx, Apache, or Traefik), ensure the proxy pa
 ### Nginx Example
 ```nginx
 location /gait-detection {
-    proxy_pass http://gait-detection-container:80;
+    proxy_pass http://gait-detection-container:8080;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -128,4 +128,5 @@ spec:
 1. The subpath must start with `/` and should not end with `/`
 2. Both `PUBLIC_URL` (build-time) and `BASE_PATH` (runtime) must match
 3. All assets and API calls will be relative to the configured subpath
-4. The health check endpoint remains at `/health` relative to the container root
+4. The health check endpoint is served at `${BASE_PATH}/health` (for example `/gait-detection/health`). When `BASE_PATH` is set, `/health` at the container root is not served.
+5. The container listens on port 8080. Ingress and proxy rules must forward the full `BASE_PATH` prefix unchanged; stripping it (for example with `rewrite-target` or a Traefik `stripPrefix` middleware) makes every request return 404.

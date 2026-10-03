@@ -14,7 +14,7 @@
     "test:watch": "vitest --watch",
     "test:e2e": "cypress run",
     "test:e2e:open": "cypress open",
-    "test:deployment": "node --test scripts/base-path-deployment.test.mjs"
+    "test:deployment": "node --test scripts/base-path-deployment.test.mjs scripts/container-proxy-smoke.test.mjs"
   },
   "dependencies": {
     "@tensorflow-models/pose-detection": "^2.1.3",
