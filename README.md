@@ -25,8 +25,8 @@ A real-time webcam-based human pose detection and motion tracking system built w
 ### Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/jedarden/pose-detection.git
+# Clone the canonical repository
+git clone https://git.ardenone.com/jedarden/pose-detection.git
 cd pose-detection
 
 # Install dependencies
@@ -145,6 +145,10 @@ npm run test:deployment
 
 ## 🚢 Deployment
 
+The canonical production CI/CD and repository workflow is documented in
+[`docs/CI-CD.md`](docs/CI-CD.md). Production pushes are authored on Forgejo;
+the GitHub copy is a read-only mirror used by the current webhook bridge.
+
 ### Kubernetes
 
 See `k8s-example.yaml` for a complete deployment example with:
@@ -159,7 +163,7 @@ See `k8s-example.yaml` for a complete deployment example with:
 version: '3.8'
 services:
   pose-detection:
-    image: pose-detection:latest
+    image: pose-detection:VERSION
     ports:
       - "8080:8080"
     environment:
@@ -172,11 +176,12 @@ MIT License - see LICENSE file for details
 
 ## 🤝 Contributing
 
-Contributions are welcome! Please read our contributing guidelines and submit pull requests to our repository.
+Contributions are welcome! Follow the Forgejo workflow in
+[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
 
 ## 📞 Support
 
-- Create an issue on GitHub
+- Create an issue on [Forgejo](https://git.ardenone.com/jedarden/pose-detection/issues)
 - Check the documentation in `/docs`
 - View deployment guide in `DEPLOYMENT.md`
 
@@ -200,4 +205,5 @@ Built with ❤️ using React, TypeScript, and TensorFlow.js
 
 Part of [jedarden.com](https://jedarden.com) · Read the write-up: [jedarden.com/projects/gait/](https://jedarden.com/projects/gait/)
 
-*This GitHub repo is a read-only mirror of git.ardenone.com/jedarden/pose-detection — issues and PRs are welcome here either way.*
+*This repository is maintained on Forgejo at
+`git.ardenone.com/jedarden/pose-detection`; GitHub is a read-only mirror.*

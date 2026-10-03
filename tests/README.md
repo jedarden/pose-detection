@@ -360,16 +360,23 @@ screen.debug();
 
 ## Continuous Integration
 
-### GitHub Actions Integration
+### Argo Workflows integration
+
+Production CI runs in Argo Workflows on `iad-ci`; see
+[`docs/CI-CD.md`](../docs/CI-CD.md) for the trigger and release gate. The
+following is a generic example for the repository's production gate:
 
 ```yaml
-- name: Run tests
+- name: Run production release gate
   run: |
-    npm run test:unit
-    npm run test:integration
-    npm run test:performance
-    npm run test:coverage
+    npm ci
+    npm run lint
+    npm run build
+    npm run test:deployment
 ```
+
+The command names above are the scripts currently defined by this repository;
+the Argo `website-build` workflow uses the lint/build portion of this gate.
 
 ### Pre-commit Hooks
 

@@ -18,20 +18,21 @@ Prior planning/debugging material lives in top-level docs rather than
 per-bead task notes in `notes/`. This plan.md does not replace those; it's
 the new home for architectural decisions going forward.
 
-CI/CD for this repo is mid-migration from GitHub Actions to Argo Workflows
-on the `iad-ci` cluster (see beads bf-2fb, bf-1sg, bf-1tb, bf-522 in this
-repo's `.beads` workspace) — `.github/workflows/ci.yml` is still present
-pending that migration's completion and is out of scope for this pass.
+CI/CD runs on Argo Workflows in the `iad-ci` cluster. Forgejo is the canonical
+source repository and GitHub is a read-only mirror. The current production
+release is a static Cloudflare Pages deployment: the mirrored GitHub push hook
+is retained as the Argo Events compatibility trigger, while the
+`website-build` workflow checks out Forgejo, runs `npm ci && npm run lint &&
+npm run build`, and deploys the `dist/` output to `gait-jedarden-com`.
 
-## Open infra note (not actioned in this pass)
+## Current deployment note
 
-This repo's `origin` remote is `github.com/jedarden/pose-detection` — there
-is no Forgejo (`git.ardenone.com`) copy of this repo yet, unlike the
-workspace's general Forgejo-primary convention. The repo's own CI is
-deliberately wired to a GitHub webhook (`https://webhooks-ci.ardenone.com/pose-detection`,
-see `notes/bf-2tx.md`), so this is not simply an oversight — migrating
-hosting would need to preserve or re-point that webhook. Flagged for a
-deliberate decision rather than acted on here.
+The old Docker Hub image publication and ArgoCD-managed `gait` workload were
+retired when the site moved to Pages. The repository's canonical release,
+webhook, Argo, and verification procedure is documented in
+[`docs/CI-CD.md`](../CI-CD.md). Older notes that describe `pose-detection-build`
+as the active image pipeline are historical and should not be used to operate
+production.
 
 ## ADR-001: 2026-07-20 — Wire the production app onto the existing service/analysis architecture instead of the ad-hoc App.tsx implementation
 

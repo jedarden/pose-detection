@@ -1,5 +1,9 @@
 # Task bf-2on: Create pose-detection-sensor.yml
 
+> Historical verification note. The site later moved from the retired
+> `pose-detection-build` image pipeline to the shared `website-build` Cloudflare
+> Pages workflow. See [`docs/CI-CD.md`](../docs/CI-CD.md) for the active path.
+
 ## Status: Already Complete
 
 The pose-detection-sensor.yml file was already created and configured correctly in a previous commit (176679d).

@@ -1,67 +1,27 @@
 # Contributing to Pose Detection
 
-Thank you for your interest in contributing to the Pose Detection project! We welcome contributions from the community.
+Forgejo is the canonical repository for this project:
 
-## How to Contribute
+```bash
+git clone https://git.ardenone.com/jedarden/pose-detection.git
+cd pose-detection
+```
 
-1. **Fork the Repository**: Click the "Fork" button on GitHub to create your own copy.
+The GitHub repository is a read-only mirror. Do not use a GitHub fork, GitHub
+Actions workflow, or a GitHub branch as the source of truth for a change. The
+production CI trigger currently arrives through the mirrored GitHub push hook,
+but the Argo workflow checks out the Forgejo repository.
 
-2. **Clone Your Fork**:
-   ```bash
-   git clone https://github.com/YOUR-USERNAME/pose-detection.git
-   cd pose-detection
-   ```
+Before submitting a change:
 
-3. **Create a Branch**:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+```bash
+npm ci
+npm run lint
+npm run build
+npm run test:deployment
+```
 
-4. **Make Your Changes**:
-   - Write clean, readable code
-   - Follow the existing code style
-   - Add tests for new features
-   - Update documentation as needed
-
-5. **Test Your Changes**:
-   ```bash
-   npm install
-   npm test
-   npm run lint
-   ```
-
-6. **Commit Your Changes**:
-   ```bash
-   git add .
-   git commit -m "feat: add your feature description"
-   ```
-
-7. **Push to Your Fork**:
-   ```bash
-   git push origin feature/your-feature-name
-   ```
-
-8. **Create a Pull Request**: Go to GitHub and create a PR from your fork to the main repository.
-
-## Code Style
-
-- Use TypeScript for all new code
-- Follow the ESLint configuration
-- Use meaningful variable and function names
-- Add JSDoc comments for public APIs
-
-## Testing
-
-- Write unit tests for new features
-- Ensure all tests pass before submitting
-- Aim for high test coverage
-
-## Reporting Issues
-
-- Use GitHub Issues to report bugs
-- Provide detailed descriptions and steps to reproduce
-- Include browser and system information
-
-## Questions?
-
-Feel free to open an issue for any questions about contributing!
+Commit the relevant files and push the change to the Forgejo `main` branch.
+The complete production release and verification procedure is in
+[`docs/CI-CD.md`](../docs/CI-CD.md). Issues belong on
+[Forgejo](https://git.ardenone.com/jedarden/pose-detection/issues).

@@ -1,5 +1,10 @@
 # Argo Events Webhook Verification (bf-2tx)
 
+> Historical verification note from the original GitHub-webhook/image
+> pipeline. The current production path still uses the mirrored GitHub hook as
+> a compatibility trigger, but builds from Forgejo and deploys Cloudflare
+> Pages through `website-build`. See [`docs/CI-CD.md`](../docs/CI-CD.md).
+
 ## Verification Results
 
 ### 1. ✅ Sensor exists in cluster

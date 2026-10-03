@@ -1,5 +1,12 @@
 # Human Pose Detection and Motion Tracking - Deployment Guide
 
+> **Production path:** This is a legacy generic Docker/Kubernetes reference.
+> The live site is released by Argo Workflows to Cloudflare Pages. Read
+> [`docs/CI-CD.md`](docs/CI-CD.md) for the canonical repository, webhook,
+> release, and verification workflow. Do not use the manual `kubectl apply`,
+> `patch`, `scale`, or `rollout restart` examples below for the production
+> site.
+
 This guide provides detailed instructions for deploying the Human Pose Detection and Motion Tracking Application in various environments, from development to production.
 
 ## 📋 Table of Contents
