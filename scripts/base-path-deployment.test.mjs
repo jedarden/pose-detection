@@ -18,6 +18,22 @@ function docker(args, options = {}) {
   return typeof output === 'string' ? output.trim() : '';
 }
 
+// A daemon that answers `docker build` but cannot start containers (rootless
+// docker with broken cgroup delegation, say) fails every test below with
+// exit 125. Probe `docker run` once and skip loudly so a host regression is
+// reported as a skip with a reason rather than as a suite failure.
+const containerRunUnavailable = (() => {
+  try {
+    execFileSync('docker', ['run', '--rm', 'alpine:3.20', 'true'], { stdio: 'ignore' });
+    return '';
+  } catch (error) {
+    return `docker run is unavailable on this host (${error.code ?? `exit ${error.status}`})`;
+  }
+})();
+if (containerRunUnavailable) {
+  console.error(`skipping BASE_PATH production deployments: ${containerRunUnavailable}`);
+}
+
 function prefixFor(basePath) {
   return basePath === '/' ? '' : basePath;
 }
@@ -99,7 +115,7 @@ async function assertLocalResources(origin, pageUrl, html, expectedPrefix) {
   }
 }
 
-describe('BASE_PATH production deployments', { concurrency: false }, () => {
+describe('BASE_PATH production deployments', { concurrency: false, skip: containerRunUnavailable || false }, () => {
   before(() => {
     docker(['build', '--tag', image, '.'], { stdio: 'inherit' });
   });

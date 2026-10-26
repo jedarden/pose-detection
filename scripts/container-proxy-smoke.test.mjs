@@ -32,6 +32,22 @@ function remove(name) {
   }
 }
 
+// A daemon that answers `docker build` but cannot start containers (rootless
+// docker with broken cgroup delegation, say) fails the smoke suite below with
+// exit 125. Probe `docker run` once and skip loudly so a host regression is
+// reported as a skip with a reason rather than as a suite failure.
+const containerRunUnavailable = (() => {
+  try {
+    execFileSync('docker', ['run', '--rm', 'alpine:3.20', 'true'], { stdio: 'ignore' });
+    return '';
+  } catch (error) {
+    return `docker run is unavailable on this host (${error.code ?? `exit ${error.status}`})`;
+  }
+})();
+if (containerRunUnavailable) {
+  console.error(`skipping container and reverse-proxy smoke: ${containerRunUnavailable}`);
+}
+
 // The Kubernetes example is the contract under test, so read its values
 // directly rather than duplicating them here.
 const example = readRepoFile('k8s-example.yaml');
@@ -164,7 +180,7 @@ describe('Kubernetes example contract', () => {
   });
 });
 
-describe('container and reverse-proxy smoke', { concurrency: false }, () => {
+describe('container and reverse-proxy smoke', { concurrency: false, skip: containerRunUnavailable || false }, () => {
   before(() => {
     docker(['build', '--tag', image, '.'], { stdio: 'inherit' });
     docker(['network', 'create', network]);
