@@ -1,54 +1,31 @@
-version: '3.8'
+# Example Compose file for pose-detection.
+# Every service builds the same image locally and differs only in the
+# runtime BASE_PATH setting. Change the left-hand port if it is already
+# in use on your machine.
 
 services:
   # Example 1: Running at root path (default)
-  gait-detection-root:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: gait-detection:latest
+  pose-detection-root:
+    build: .
     ports:
       - "8080:8080"
     environment:
       - BASE_PATH=/
 
   # Example 2: Running at /gait-detection subpath
-  gait-detection-subpath:
-    # Use the same image - subpath is configured at runtime!
-    image: gait-detection:latest
+  pose-detection-subpath:
+    # Same local build - the subpath is configured at runtime
+    build: .
     ports:
       - "8081:8080"
     environment:
       - BASE_PATH=/gait-detection
 
   # Example 3: Running at /apps/pose-detector subpath
-  gait-detection-nested:
-    # Use the same image - subpath is configured at runtime!
-    image: gait-detection:latest
+  pose-detection-nested:
+    # Same local build - the subpath is configured at runtime
+    build: .
     ports:
       - "8082:8080"
     environment:
       - BASE_PATH=/apps/pose-detector
-
-  # Example 4: Behind a reverse proxy with path rewriting
-  gait-detection-proxied:
-    image: gait-detection:latest
-    environment:
-      - BASE_PATH=/ai/pose
-    networks:
-      - proxy-network
-    
-  # Example reverse proxy
-  nginx-proxy:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-    volumes:
-      - ./nginx-proxy.conf:/etc/nginx/conf.d/default.conf:ro
-    networks:
-      - proxy-network
-    depends_on:
-      - gait-detection-proxied
-
-networks:
-  proxy-network:
