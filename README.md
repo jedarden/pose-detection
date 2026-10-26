@@ -25,8 +25,7 @@ A real-time webcam-based human pose detection and motion tracking system built w
 ### Installation
 
 ```bash
-# Clone the canonical repository
-git clone https://git.ardenone.com/jedarden/pose-detection.git
+git clone https://github.com/jedarden/pose-detection.git
 cd pose-detection
 
 # Install dependencies
@@ -36,7 +35,9 @@ npm install
 npm run dev
 ```
 
-Visit http://localhost:5173 to see the application.
+`npm run dev` serves the app at http://localhost:5173. Open that URL, allow
+the browser's camera prompt, click **▶️ Start Analysis**, and the skeleton
+overlay appears over the live camera feed.
 
 ### Docker Deployment
 
@@ -50,6 +51,9 @@ docker run -p 8080:8080 pose-detection
 # Run with custom base path (runtime setting, same image)
 docker run -p 8080:8080 -e BASE_PATH=/pose pose-detection
 ```
+
+If port 8080 is already in use on your machine, change the left-hand port
+only, e.g. `-p 18080:8080`, and open http://localhost:18080 instead.
 
 ## 🏗️ Architecture
 
@@ -160,10 +164,9 @@ See `k8s-example.yaml` for a complete deployment example with:
 ### Docker Compose
 
 ```yaml
-version: '3.8'
 services:
   pose-detection:
-    image: pose-detection:VERSION
+    build: .
     ports:
       - "8080:8080"
     environment:
@@ -176,12 +179,13 @@ MIT License - see LICENSE file for details
 
 ## 🤝 Contributing
 
-Contributions are welcome! Follow the Forgejo workflow in
-[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md).
+Contributions are welcome! Forgejo is the source of truth for changes — see
+[`.github/CONTRIBUTING.md`](.github/CONTRIBUTING.md) for the workflow. The
+GitHub copy is a read-only mirror.
 
 ## 📞 Support
 
-- Create an issue on [Forgejo](https://git.ardenone.com/jedarden/pose-detection/issues)
+- [Open an issue on GitHub](https://github.com/jedarden/pose-detection/issues)
 - Check the documentation in `/docs`
 - View deployment guide in [`docs/deployment.md`](docs/deployment.md)
 
