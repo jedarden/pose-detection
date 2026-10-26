@@ -183,7 +183,7 @@ Contributions are welcome! Follow the Forgejo workflow in
 
 - Create an issue on [Forgejo](https://git.ardenone.com/jedarden/pose-detection/issues)
 - Check the documentation in `/docs`
-- View deployment guide in `DEPLOYMENT.md`
+- View deployment guide in [`docs/deployment.md`](docs/deployment.md)
 
 ## 🤖 AI-Generated Code
 

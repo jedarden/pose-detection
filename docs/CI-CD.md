@@ -98,7 +98,7 @@ The following are therefore not release steps:
 - running `kubectl apply`, `patch`, `scale`, or `rollout restart` for this site.
 
 `Dockerfile`, `k8s/deployment.yaml`, `k8s-example.yaml`, and the generic
-`DEPLOYMENT.md` examples remain useful for local/container experimentation,
+`docs/deployment.md` examples remain useful for local/container experimentation,
 but they are not the production deployment contract. The
 `pose-detection-build` WorkflowTemplate, where present in a checkout of
 `declarative-config`, is historical/orphaned: the active sensor submits

@@ -56,3 +56,13 @@ coverage/
 .beads/*.temp
 .beads/*.journal
 .br_recovery/
+
+# Historical fleet-run validation dumps and one-off scripts, removed 2026-10-26.
+# Root-anchored so scripts/ and docs/ are unaffected.
+/*_VALIDATION.md
+/*_TESTING.md
+/webhook-test.md
+/container-purpose.md
+/test-*.sh
+/validate-*.sh
+/run-cypress-tests.sh

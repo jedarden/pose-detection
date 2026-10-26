@@ -12,11 +12,12 @@ built to a static bundle, served by nginx in a Docker container, and
 deployed publicly at **https://gait.jedarden.com** (confirmed live,
 HTTP 200, as of 2026-07-20).
 
-Prior planning/debugging material lives in top-level docs rather than
-`docs/notes/`: `README.md`, `DEPLOYMENT.md`, `container-purpose.md`,
-`BASE_PATH_TESTING.md`, `REDIRECT_FIX_VALIDATION.md`, and the
-per-bead task notes in `notes/`. This plan.md does not replace those; it's
-the new home for architectural decisions going forward.
+The earlier fleet-run validation reports and one-off scripts that used to
+sit in the repo root were removed on 2026-10-26 (retrievable from git
+history); the deployment guides live at `docs/deployment.md` and
+`docs/subpath-deployment.md`, and the per-bead task notes remain in
+`notes/`. This plan.md is the home for architectural decisions going
+forward.
 
 CI/CD runs on Argo Workflows in the `iad-ci` cluster. Forgejo is the canonical
 source repository and GitHub is a read-only mirror. The current production
