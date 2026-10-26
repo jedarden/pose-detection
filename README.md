@@ -4,6 +4,8 @@ A real-time webcam-based human pose detection and motion tracking system built w
 
 🎮 **[Live Demo](https://gait.jedarden.com)** - Try it out in your browser!
 
+![The app running: a live camera feed with the control bar and motion-analysis panels below it](docs/images/app-screenshot.png)
+
 ## 🎯 Features
 
 - **Real-time Pose Detection**: Uses TensorFlow.js with MoveNet for accurate pose estimation
@@ -35,9 +37,11 @@ npm install
 npm run dev
 ```
 
-`npm run dev` serves the app at http://localhost:5173. Open that URL, allow
-the browser's camera prompt, click **▶️ Start Analysis**, and the skeleton
-overlay appears over the live camera feed.
+`npm run dev` serves the app at http://localhost:3000 (the port is fixed in
+`vite.config.ts`; if that port is taken on your machine, relocate it with
+`npm run dev -- --port 5173`, which serves at http://localhost:5173). Open the
+URL, allow the browser's camera prompt, click **▶️ Start Analysis**, and the
+skeleton overlay appears over the live camera feed.
 
 ### Docker Deployment
 
