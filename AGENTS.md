@@ -13,7 +13,7 @@ Guidance for AI coding agents working in this repository.
 
 ```bash
 npm ci                       # reproducible install
-npm run dev                  # dev server at http://localhost:5173
+npm run dev                  # dev server at http://localhost:3000 (vite.config.ts pins port 3000, strictPort; override with: npm run dev -- --port 5173)
 npx vitest run               # unit tests, single pass
 npm run build                # production build to dist/
 npm run test:deployment      # node --test suites for container/base-path behavior
